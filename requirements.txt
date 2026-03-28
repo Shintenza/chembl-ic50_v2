@@ -1,0 +1,9 @@
+torch
+torch-geometric
+rdkit
+psycopg2-binary
+pandas
+pyarrow
+scikit-learn
+numpy
+tqdm

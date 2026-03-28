@@ -1,0 +1,52 @@
+# Data directories
+data/raw/
+data/cleaned/
+data/graphs/
+data/splits/
+data/models/
+data/logs/
+
+# Keep data/ directory tracked but ignore contents
+# (uncomment below if you want to track the empty data/ dirs via .gitkeep)
+# !data/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pqo
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Local env — copy .env.example → .env, never commit the real one
+.env
+
+# ChEMBL dump files (large binary downloads — not for version control)
+dumps/
+
+# PyTorch model files inside data/
+data/**/*.pt
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
