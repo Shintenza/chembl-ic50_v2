@@ -77,9 +77,6 @@ def train_epoch(
         total_samples += batch_size
         del batch, preds, labels, loss
 
-        if device.type == "mps" and step % 100 == 0:
-            torch.mps.empty_cache()
-
     gc.collect()
     return total_loss / max(total_samples, 1)
 
@@ -124,9 +121,6 @@ def evaluate(
             all_preds.append(preds.cpu().numpy().ravel())
             all_labels.append(labels.cpu().numpy().ravel())
             del batch, preds, labels
-
-            if device.type == "mps" and step % 100 == 0:
-                torch.mps.empty_cache()
 
     preds_arr = np.concatenate(all_preds)
     labels_arr = np.concatenate(all_labels)
@@ -202,11 +196,7 @@ def train(
 
     for epoch in range(max_epochs):
         train_loss = train_epoch(model, train_loader, optimizer, loss_fn, device)
-        if device.type == "mps":
-            torch.mps.empty_cache()
         val_metrics = evaluate(model, val_loader, device)
-        if device.type == "mps":
-            torch.mps.empty_cache()
 
         train_losses.append(train_loss)
         val_metrics_history.append(val_metrics)
@@ -340,8 +330,6 @@ def run_training(
         torch.load(model_save_path, map_location=device, weights_only=True)
     )
     test_metrics = evaluate(model, test_loader, device)
-    if device.type == "mps":
-        torch.mps.empty_cache()
 
     logger.info("Test metrics: %s", format_metrics(test_metrics))
 
