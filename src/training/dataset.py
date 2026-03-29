@@ -14,20 +14,20 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# IterableDataset
+# Base dataset
 # ---------------------------------------------------------------------------
 
 
-class SplitGraphDataset(IterableDataset):
-    """Streams graphs from pre-split chunk files one file at a time.
+class ChunkedSplitDataset(IterableDataset):
+    """Streams samples from pre-split chunk files one file at a time.
 
-    Each chunk file is loaded, its graphs yielded to the DataLoader, then
-    immediately deleted from memory.  This keeps RAM usage bounded to
-    roughly one chunk at a time regardless of dataset size.
+    Each chunk file is loaded, its samples yielded via ``_iter_chunk``, then
+    immediately deleted from memory.  RAM usage stays bounded to roughly one
+    chunk at a time regardless of dataset size.
 
     Multi-worker support: chunk files are distributed across workers in a
     strided fashion (worker 0 gets files 0, N, 2N, ...; worker 1 gets
-    1, N+1, ...) so no graph is yielded twice and all workers stay busy.
+    1, N+1, ...) so no sample is yielded twice.
 
     Parameters
     ----------
@@ -35,8 +35,8 @@ class SplitGraphDataset(IterableDataset):
         Directory containing ``chunk_*.pt`` files and ``metadata.json``
         for one split (train, val, or test).
     shuffle:
-        If True, shuffles the chunk order and within-chunk graph order on
-        every iteration (each epoch gets a different ordering).
+        If True, shuffles chunk order and within-chunk sample order on
+        every iteration.
     """
 
     def __init__(self, split_dir: Path, shuffle: bool = False) -> None:
@@ -47,14 +47,20 @@ class SplitGraphDataset(IterableDataset):
             raise FileNotFoundError(f"No chunk files found in {self._dir}")
 
         meta_path = self._dir / "metadata.json"
-        self._total_graphs: int | None = None
+        self._total: int | None = None
         if meta_path.exists():
-            self._total_graphs = json.loads(meta_path.read_text())["total_graphs"]
+            meta = json.loads(meta_path.read_text())
+            # support both key names used by the two builders
+            self._total = meta.get("total_graphs") or meta.get("total_samples")
 
     def __len__(self) -> int:
-        if self._total_graphs is None:
+        if self._total is None:
             raise TypeError(f"Dataset size unknown — metadata.json missing in {self._dir}")
-        return self._total_graphs
+        return self._total
+
+    def _iter_chunk(self, chunk):
+        """Yield individual samples from a loaded chunk. Override in subclasses."""
+        raise NotImplementedError
 
     def __iter__(self):
         worker_info = get_worker_info()
@@ -63,58 +69,91 @@ class SplitGraphDataset(IterableDataset):
         if self._shuffle:
             random.shuffle(chunk_files)
 
-        # Distribute chunk files evenly across workers.
-        # Each worker takes every Nth file (strided), so:
-        #   worker 0 → files [0, N, 2N, ...]
-        #   worker 1 → files [1, N+1, 2N+1, ...]
         if worker_info is not None:
             chunk_files = chunk_files[worker_info.id :: worker_info.num_workers]
 
         for chunk_file in chunk_files:
-            graphs: list[Data] = torch.load(chunk_file, weights_only=False)
+            chunk = torch.load(chunk_file, weights_only=False)
+            samples = list(self._iter_chunk(chunk))
             if self._shuffle:
-                random.shuffle(graphs)
-            yield from graphs
-            del graphs  # release memory before loading next chunk
+                random.shuffle(samples)
+            yield from samples
+            del chunk, samples
             gc.collect()
 
 
 # ---------------------------------------------------------------------------
-# Factory
+# Concrete dataset classes
 # ---------------------------------------------------------------------------
 
 
-def create_dataloaders(
+class GraphSplitDataset(ChunkedSplitDataset):
+    """Streams PyG ``Data`` objects from graph chunk files."""
+
+    def _iter_chunk(self, chunk):
+        yield from chunk  # chunk is list[Data]
+
+
+class FingerprintSplitDataset(ChunkedSplitDataset):
+    """Streams ``(fingerprint, label)`` tensor pairs from fingerprint chunk files."""
+
+    def _iter_chunk(self, chunk):
+        x, y = chunk  # chunk is (Tensor[N, n_bits], Tensor[N])
+        yield from zip(x, y)
+
+
+# ---------------------------------------------------------------------------
+# DataLoader factories
+# ---------------------------------------------------------------------------
+
+
+def _make_loaders(
+    train_ds: ChunkedSplitDataset,
+    val_ds: ChunkedSplitDataset,
+    test_ds: ChunkedSplitDataset,
+    batch_size: int,
+    eval_batch_size: int,
+    num_workers: int,
+    collate_fn=None,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    kwargs = dict(num_workers=num_workers)
+    if collate_fn is not None:
+        kwargs["collate_fn"] = collate_fn
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size,      **kwargs)
+    val_loader   = DataLoader(val_ds,   batch_size=eval_batch_size, **kwargs)
+    test_loader  = DataLoader(test_ds,  batch_size=eval_batch_size, **kwargs)
+
+    logger.info(
+        "DataLoaders ready — train=%d, val=%d, test=%d samples",
+        len(train_ds), len(val_ds), len(test_ds),
+    )
+    return train_loader, val_loader, test_loader
+
+
+def create_graph_dataloaders(
     split_graphs_dir: Path,
     batch_size: int,
     eval_batch_size: int,
     num_workers: int = 0,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
-    """Create train, val, and test DataLoaders from a pre-split graph directory.
-
-    Parameters
-    ----------
-    split_graphs_dir:
-        Directory produced by ``reorganize_by_split`` — contains ``train/``,
-        ``val/``, and ``test/`` subdirectories, each with ``chunk_*.pt`` files.
-    batch_size:
-        Mini-batch size for the training loader.
-    eval_batch_size:
-        Mini-batch size for validation and test loaders.
-    num_workers:
-        Number of worker processes for the inner DataLoader.
-    """
+    """Create train/val/test DataLoaders from a pre-split graph directory."""
     split_graphs_dir = Path(split_graphs_dir)
+    train_ds = GraphSplitDataset(split_graphs_dir / "train", shuffle=True)
+    val_ds   = GraphSplitDataset(split_graphs_dir / "val",   shuffle=False)
+    test_ds  = GraphSplitDataset(split_graphs_dir / "test",  shuffle=False)
+    return _make_loaders(train_ds, val_ds, test_ds, batch_size, eval_batch_size, num_workers, Batch.from_data_list)
 
-    train_ds = SplitGraphDataset(split_graphs_dir / "train", shuffle=True)
-    val_ds   = SplitGraphDataset(split_graphs_dir / "val",   shuffle=False)
-    test_ds  = SplitGraphDataset(split_graphs_dir / "test",  shuffle=False)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size,      collate_fn=Batch.from_data_list, num_workers=num_workers)
-    val_loader   = DataLoader(val_ds,   batch_size=eval_batch_size, collate_fn=Batch.from_data_list, num_workers=num_workers)
-    test_loader  = DataLoader(test_ds,  batch_size=eval_batch_size, collate_fn=Batch.from_data_list, num_workers=num_workers)
-
-    logger.info("DataLoaders ready — train=%d, val=%d, test=%d graphs",
-                len(train_ds), len(val_ds), len(test_ds))
-
-    return train_loader, val_loader, test_loader
+def create_fp_dataloaders(
+    split_fp_dir: Path,
+    batch_size: int,
+    eval_batch_size: int,
+    num_workers: int = 0,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """Create train/val/test DataLoaders from a pre-split fingerprint directory."""
+    split_fp_dir = Path(split_fp_dir)
+    train_ds = FingerprintSplitDataset(split_fp_dir / "train", shuffle=True)
+    val_ds   = FingerprintSplitDataset(split_fp_dir / "val",   shuffle=False)
+    test_ds  = FingerprintSplitDataset(split_fp_dir / "test",  shuffle=False)
+    return _make_loaders(train_ds, val_ds, test_ds, batch_size, eval_batch_size, num_workers)

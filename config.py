@@ -64,6 +64,7 @@ PATHS: dict = {
     "RAW_DIR": DATA_DIR / "raw",
     "CLEANED_DIR": DATA_DIR / "cleaned",
     "GRAPHS_DIR": DATA_DIR / "graphs",
+    "FINGERPRINTS_DIR": DATA_DIR / "fingerprints",
     "SPLITS_DIR": DATA_DIR / "splits",
     "MODELS_DIR": DATA_DIR / "models",
     "LOGS_DIR": DATA_DIR / "logs",
@@ -124,6 +125,16 @@ SPLIT: dict = {
 }
 
 # ---------------------------------------------------------------------------
+# Fingerprint settings
+# ---------------------------------------------------------------------------
+
+FINGERPRINT: dict = {
+    "RADIUS": 2,
+    "N_BITS": 2048,
+    "CHUNK_SIZE": 10_000,
+}
+
+# ---------------------------------------------------------------------------
 # Model training
 # ---------------------------------------------------------------------------
 
@@ -137,5 +148,17 @@ TRAINING: dict = {
     "MAX_EPOCHS": 200,
     "PATIENCE": 15,
     "EVAL_BATCH_SIZE": 1024,
+    "NUM_WORKERS": 4,
+}
+
+MLP_TRAINING: dict = {
+    "HIDDEN_DIMS": [512, 128],
+    "DROPOUT": 0.3,
+    "BATCH_SIZE": 512,
+    "EVAL_BATCH_SIZE": 1024,
+    "LEARNING_RATE": 1e-3,
+    "WEIGHT_DECAY": 1e-5,
+    "MAX_EPOCHS": 200,
+    "PATIENCE": 15,
     "NUM_WORKERS": 4,
 }

@@ -1,11 +1,19 @@
 """GCN model definition and factory for pIC50 regression."""
 
+from __future__ import annotations
+
+from typing import Any
+
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 from torch_geometric.nn import GCNConv, global_mean_pool
 
+from .base import IC50Model
 
-class GCNModel(nn.Module):
+
+class GCNModel(IC50Model):
     """A simple GCN with global mean pooling and a 2-layer MLP readout.
 
     Architecture
@@ -61,8 +69,12 @@ class GCNModel(nn.Module):
         x = self.lin2(x)  # shape: [num_graphs, 1]
         return x.squeeze(-1)  # shape: [num_graphs]
 
+    def unpack_batch(self, batch: Any, device: torch.device) -> tuple[Any, Tensor]:
+        b = batch.to(device)
+        return b, b.y.squeeze(-1)
 
-def build_model(model_key: str, training_cfg: dict, graph_cfg: dict) -> nn.Module:
+
+def build_model(model_key: str, training_cfg: dict, graph_cfg: dict) -> IC50Model:
     """Instantiate and return the requested model architecture.
 
     Parameters
