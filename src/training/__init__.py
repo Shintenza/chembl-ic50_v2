@@ -1,16 +1,25 @@
 """Training sub-package: dataset, metrics, and trainer utilities."""
 
-from .dataset import SplitGraphDataset, create_dataloaders
+from .dataset import (
+    ChunkedSplitDataset,
+    GraphSplitDataset,
+    FingerprintSplitDataset,
+    create_graph_dataloaders,
+    create_fp_dataloaders,
+)
 from .metrics import compute_metrics, format_metrics
-from .trainer import train_epoch, evaluate, train, run_training
+from .trainer import resolve_device, train_epoch, evaluate, run_training
 
 __all__ = [
-    "SplitGraphDataset",
-    "create_dataloaders",
+    "ChunkedSplitDataset",
+    "GraphSplitDataset",
+    "FingerprintSplitDataset",
+    "create_graph_dataloaders",
+    "create_fp_dataloaders",
     "compute_metrics",
     "format_metrics",
+    "resolve_device",
     "train_epoch",
     "evaluate",
-    "train",
     "run_training",
 ]

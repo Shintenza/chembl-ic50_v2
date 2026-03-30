@@ -29,6 +29,7 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 from tqdm import tqdm
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+from src.enums import Split
 
 logger = logging.getLogger(__name__)
 
@@ -164,8 +165,7 @@ def build_split_map(
     """Collect all cleaned molecules, run scaffold split, return a split map.
 
     Uses ``activity_id`` (ChEMBL's primary key from the ``activities`` table)
-    as the join key between the split map and the graph chunk index.  No
-    artificial sequential index is needed.
+    as the stable join key.
 
     Parameters
     ----------
@@ -179,8 +179,7 @@ def build_split_map(
     Returns
     -------
     pd.DataFrame
-        Columns: ``activity_id``, ``std_smiles``, ``target_chembl_id``,
-        ``pchembl_value``, ``split``.
+        Columns: ``activity_id``, ``split``.
         ``split`` values are one of ``'train'``, ``'val'``, ``'test'``.
     """
     cleaned_dir = Path(cleaned_dir)
@@ -188,21 +187,9 @@ def build_split_map(
     if not parquet_files:
         raise FileNotFoundError(f"No cleaned parquet files found in {cleaned_dir}")
 
-    # Load only the columns we need — never pull all columns into memory.
-    needed_cols = ["activity_id", "std_smiles", "pchembl_value"]
-    optional_cols = ["target_chembl_id"]
-
     chunks: list[pd.DataFrame] = []
-
     for pq_path in tqdm(parquet_files, desc="Loading cleaned data", unit="file"):
-        df = pd.read_parquet(pq_path, engine="pyarrow")
-
-        cols = needed_cols + [c for c in optional_cols if c in df.columns]
-        df = df[cols].copy()
-
-        if "target_chembl_id" not in df.columns:
-            df["target_chembl_id"] = None
-
+        df = pd.read_parquet(pq_path, engine="pyarrow", columns=["activity_id", "std_smiles"])
         chunks.append(df)
 
     all_df = pd.concat(chunks, ignore_index=True)
@@ -217,51 +204,11 @@ def build_split_map(
     )
 
     split_labels = pd.array([""] * len(all_df), dtype="object")
-    split_labels[train_idx] = "train"
-    split_labels[val_idx] = "val"
-    split_labels[test_idx] = "test"
-    all_df["split"] = split_labels
+    split_labels[train_idx] = Split.TRAIN
+    split_labels[val_idx]   = Split.VAL
+    split_labels[test_idx]  = Split.TEST
 
-    col_order = ["activity_id", "std_smiles", "target_chembl_id", "pchembl_value", "split"]
-    return all_df[[c for c in col_order if c in all_df.columns]]
-
-
-# ---------------------------------------------------------------------------
-# Persistence helpers
-# ---------------------------------------------------------------------------
-
-
-def save_split_map(df: pd.DataFrame, output_path: Path) -> None:
-    """Save *df* as a Parquet file at *output_path*.
-
-    Parameters
-    ----------
-    df:
-        Split-map DataFrame as returned by :func:`build_split_map`.
-    output_path:
-        Destination ``.parquet`` file path.
-    """
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(output_path, index=False, engine="pyarrow")
-    logger.info("Split map saved → %s (%d rows)", output_path, len(df))
-
-
-def load_split_map(path: Path) -> pd.DataFrame:
-    """Load a split-map Parquet file.
-
-    Parameters
-    ----------
-    path:
-        Path to the ``.parquet`` split-map file.
-
-    Returns
-    -------
-    pd.DataFrame
-        The split map with at minimum columns ``activity_id``, ``std_smiles``,
-        ``pchembl_value``, ``split``.
-    """
-    path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f"Split map not found: {path}")
-    return pd.read_parquet(path, engine="pyarrow")
+    return pd.DataFrame({
+        "activity_id": all_df["activity_id"],
+        "split": split_labels,
+    })

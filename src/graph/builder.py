@@ -2,8 +2,9 @@
 Molecular graph builder.
 
 Converts cleaned SMILES into PyTorch Geometric Data objects and writes them
-directly into per-split chunk files (train/val/test) in a single pass.
-No intermediate files are created.
+into a single flat directory of chunk files (split-agnostic).  Each Data
+object already carries an ``activity_id`` attribute so that training-time
+datasets can filter by any split map without recomputing graphs.
 """
 
 from __future__ import annotations
@@ -78,68 +79,51 @@ def mol_to_graph(
 # ---------------------------------------------------------------------------
 
 
-def build_graphs_by_split(
+def build_graphs(
     cleaned_dir: Path,
-    split_map_path: Path,
-    output_base: Path,
+    output_dir: Path,
     chunk_size: int,
-) -> dict[str, int]:
-    """Build graphs from cleaned parquets and write directly to split dirs.
+) -> int:
+    """Build graphs from cleaned parquets and write flat chunk files.
 
     Reads every ``batch_*.parquet`` in *cleaned_dir*, converts each row to a
-    PyG Data object, looks up its split from the split map, and appends it to
-    the appropriate output buffer.  Buffers are flushed to
-    ``output_base/{split}/chunk_NNNN.pt`` files when they reach *chunk_size*.
-
-    Nothing is written to a temporary location — graphs land in their final
-    split directory immediately.
+    PyG Data object, and flushes them into ``output_dir/chunk_NNNN.pt`` files
+    when the buffer reaches *chunk_size*.  Each Data object carries an
+    ``activity_id`` attribute so downstream datasets can apply any split map
+    at load time without recomputing graphs.
 
     Parameters
     ----------
     cleaned_dir:
         Directory containing cleaned ``batch_*.parquet`` files.
-    split_map_path:
-        Split-map Parquet file (columns: activity_id, split).
-    output_base:
-        Root output directory.  train/, val/, test/ subdirs are created here.
+    output_dir:
+        Flat output directory.  ``chunk_*.pt`` and ``metadata.json`` are
+        written here directly (no train/val/test subdirs).
     chunk_size:
         Maximum graphs per chunk file.
 
     Returns
     -------
-    dict[str, int]
-        Total graph counts per split: ``{'train': N, 'val': N, 'test': N}``.
+    int
+        Total number of graphs written.
     """
-    cleaned_dir    = Path(cleaned_dir)
-    split_map_path = Path(split_map_path)
-    output_base    = Path(output_base)
-
-    split_map = pd.read_parquet(split_map_path, engine="pyarrow")
-    activity_to_split: dict[int, str] = dict(
-        zip(split_map["activity_id"].tolist(), split_map["split"].tolist())
-    )
-
-    splits = ("train", "val", "test")
-    for s in splits:
-        (output_base / s).mkdir(parents=True, exist_ok=True)
-
-    buffers:      dict[str, list[Data]] = {s: [] for s in splits}
-    chunk_counts: dict[str, int]        = {s: 0  for s in splits}
-    total_counts: dict[str, int]        = {s: 0  for s in splits}
+    cleaned_dir = Path(cleaned_dir)
+    output_dir  = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_files = sorted(cleaned_dir.glob("batch_*.parquet"))
     if not parquet_files:
         raise FileNotFoundError(f"No cleaned parquet files found in {cleaned_dir}")
+
+    buffer:      list[Data] = []
+    chunk_count: int        = 0
+    total:       int        = 0
 
     for parquet_path in tqdm(parquet_files, desc="Building graphs", unit="file"):
         df = pd.read_parquet(parquet_path, engine="pyarrow")
         has_target = "target_chembl_id" in df.columns
 
         for _, row in tqdm(df.iterrows(), total=len(df), leave=False, unit="mol"):
-            split = activity_to_split.get(int(row["activity_id"]))
-            if split is None:
-                continue
-
             g = mol_to_graph(
                 smiles=row["std_smiles"],
                 y_value=float(row["pchembl_value"]),
@@ -149,27 +133,23 @@ def build_graphs_by_split(
             if g is None:
                 continue
 
-            buffers[split].append(g)
-            total_counts[split] += 1
+            buffer.append(g)
+            total += 1
 
-            if len(buffers[split]) >= chunk_size:
-                _flush(buffers[split], output_base / split, chunk_counts[split])
-                chunk_counts[split] += 1
-                buffers[split] = []
+            if len(buffer) >= chunk_size:
+                _flush(buffer, output_dir, chunk_count)
+                chunk_count += 1
+                buffer = []
 
-    # Flush remaining graphs
-    for split, buf in buffers.items():
-        if buf:
-            _flush(buf, output_base / split, chunk_counts[split])
+    if buffer:
+        _flush(buffer, output_dir, chunk_count)
 
-    # Write metadata so SplitGraphDataset knows total counts without scanning files
-    for split in splits:
-        meta = {"total_graphs": total_counts[split]}
-        (output_base / split / "metadata.json").write_text(json.dumps(meta))
-        logger.info("%s: %d graphs", split, total_counts[split])
+    meta = {"total_graphs": total}
+    (output_dir / "metadata.json").write_text(json.dumps(meta))
+    logger.info("Total graphs written: %d", total)
 
-    return total_counts
+    return total
 
 
-def _flush(graphs: list[Data], split_dir: Path, n: int) -> None:
-    torch.save(graphs, split_dir / f"chunk_{n:04d}.pt")
+def _flush(graphs: list[Data], out_dir: Path, n: int) -> None:
+    torch.save(graphs, out_dir / f"chunk_{n:04d}.pt")

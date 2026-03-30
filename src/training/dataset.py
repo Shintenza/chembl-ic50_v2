@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import gc
-import json
 import logging
 import random
 from pathlib import Path
@@ -9,6 +8,8 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 from torch_geometric.data import Batch, Data
+
+from src.enums import Split
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +20,11 @@ logger = logging.getLogger(__name__)
 
 
 class ChunkedSplitDataset(IterableDataset):
-    """Streams samples from pre-split chunk files one file at a time.
+    """Streams samples from flat chunk files, filtered by a split map.
 
-    Each chunk file is loaded, its samples yielded via ``_iter_chunk``, then
-    immediately deleted from memory.  RAM usage stays bounded to roughly one
-    chunk at a time regardless of dataset size.
+    Each chunk file is loaded, its samples filtered to ``target_split`` via
+    ``split_map``, yielded, then immediately deleted from memory.  RAM usage
+    stays bounded to roughly one chunk at a time regardless of dataset size.
 
     Multi-worker support: chunk files are distributed across workers in a
     strided fashion (worker 0 gets files 0, N, 2N, ...; worker 1 gets
@@ -31,31 +32,36 @@ class ChunkedSplitDataset(IterableDataset):
 
     Parameters
     ----------
-    split_dir:
-        Directory containing ``chunk_*.pt`` files and ``metadata.json``
-        for one split (train, val, or test).
+    chunks_dir:
+        Directory containing flat ``chunk_*.pt`` files (no train/val/test
+        subdirs — all splits share the same files).
+    split_map:
+        Mapping of ``activity_id → split_name`` for the entire dataset.
+        Loaded once in the main process and inherited by workers via fork.
+    target_split:
+        Which split to yield: ``'train'``, ``'val'``, or ``'test'``.
     shuffle:
         If True, shuffles chunk order and within-chunk sample order on
         every iteration.
     """
 
-    def __init__(self, split_dir: Path, shuffle: bool = False) -> None:
-        self._dir = Path(split_dir)
-        self._shuffle = shuffle
-        self._chunk_files = sorted(self._dir.glob("chunk_*.pt"))
+    def __init__(
+        self,
+        chunks_dir: Path,
+        split_map: dict[int, str],
+        target_split: Split,
+        shuffle: bool = False,
+    ) -> None:
+        self._dir          = Path(chunks_dir)
+        self._split_map    = split_map
+        self._target_split = target_split
+        self._shuffle      = shuffle
+        self._chunk_files  = sorted(self._dir.glob("chunk_*.pt"))
         if not self._chunk_files:
             raise FileNotFoundError(f"No chunk files found in {self._dir}")
-
-        meta_path = self._dir / "metadata.json"
-        self._total: int | None = None
-        if meta_path.exists():
-            meta = json.loads(meta_path.read_text())
-            # support both key names used by the two builders
-            self._total = meta.get("total_graphs") or meta.get("total_samples")
+        self._total = sum(1 for v in split_map.values() if v == target_split)
 
     def __len__(self) -> int:
-        if self._total is None:
-            raise TypeError(f"Dataset size unknown — metadata.json missing in {self._dir}")
         return self._total
 
     def _iter_chunk(self, chunk):
@@ -88,18 +94,24 @@ class ChunkedSplitDataset(IterableDataset):
 
 
 class GraphSplitDataset(ChunkedSplitDataset):
-    """Streams PyG ``Data`` objects from graph chunk files."""
+    """Streams PyG ``Data`` objects from flat graph chunk files."""
 
     def _iter_chunk(self, chunk):
-        yield from chunk  # chunk is list[Data]
+        # chunk is list[Data]; each Data has an activity_id attribute
+        for data in chunk:
+            if self._split_map.get(int(data.activity_id)) == self._target_split:
+                yield data
 
 
 class FingerprintSplitDataset(ChunkedSplitDataset):
-    """Streams ``(fingerprint, label)`` tensor pairs from fingerprint chunk files."""
+    """Streams ``(fingerprint, label)`` tensor pairs from flat fingerprint chunk files."""
 
     def _iter_chunk(self, chunk):
-        x, y = chunk  # chunk is (Tensor[N, n_bits], Tensor[N])
-        yield from zip(x, y)
+        # chunk is (Tensor[N, n_bits], Tensor[N], Tensor[N]) = (X, y, activity_ids)
+        x, y, activity_ids = chunk
+        for xi, yi, aid in zip(x, y, activity_ids):
+            if self._split_map.get(int(aid)) == self._target_split:
+                yield xi, yi
 
 
 # ---------------------------------------------------------------------------
@@ -132,28 +144,30 @@ def _make_loaders(
 
 
 def create_graph_dataloaders(
-    split_graphs_dir: Path,
+    chunks_dir: Path,
+    split_map: dict[int, str],
     batch_size: int,
     eval_batch_size: int,
     num_workers: int = 0,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
-    """Create train/val/test DataLoaders from a pre-split graph directory."""
-    split_graphs_dir = Path(split_graphs_dir)
-    train_ds = GraphSplitDataset(split_graphs_dir / "train", shuffle=True)
-    val_ds   = GraphSplitDataset(split_graphs_dir / "val",   shuffle=False)
-    test_ds  = GraphSplitDataset(split_graphs_dir / "test",  shuffle=False)
+    """Create train/val/test DataLoaders from a flat graph chunk directory."""
+    chunks_dir = Path(chunks_dir)
+    train_ds = GraphSplitDataset(chunks_dir, split_map, Split.TRAIN, shuffle=True)
+    val_ds   = GraphSplitDataset(chunks_dir, split_map, Split.VAL)
+    test_ds  = GraphSplitDataset(chunks_dir, split_map, Split.TEST)
     return _make_loaders(train_ds, val_ds, test_ds, batch_size, eval_batch_size, num_workers, Batch.from_data_list)
 
 
 def create_fp_dataloaders(
-    split_fp_dir: Path,
+    chunks_dir: Path,
+    split_map: dict[int, str],
     batch_size: int,
     eval_batch_size: int,
     num_workers: int = 0,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
-    """Create train/val/test DataLoaders from a pre-split fingerprint directory."""
-    split_fp_dir = Path(split_fp_dir)
-    train_ds = FingerprintSplitDataset(split_fp_dir / "train", shuffle=True)
-    val_ds   = FingerprintSplitDataset(split_fp_dir / "val",   shuffle=False)
-    test_ds  = FingerprintSplitDataset(split_fp_dir / "test",  shuffle=False)
+    """Create train/val/test DataLoaders from a flat fingerprint chunk directory."""
+    chunks_dir = Path(chunks_dir)
+    train_ds = FingerprintSplitDataset(chunks_dir, split_map, Split.TRAIN, shuffle=True)
+    val_ds   = FingerprintSplitDataset(chunks_dir, split_map, Split.VAL)
+    test_ds  = FingerprintSplitDataset(chunks_dir, split_map, Split.TEST)
     return _make_loaders(train_ds, val_ds, test_ds, batch_size, eval_batch_size, num_workers)

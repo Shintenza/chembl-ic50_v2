@@ -1,32 +1,30 @@
 #!/usr/bin/env python3
 """
-05_train.py — Train a GNN model for IC50 (pIC50) regression.
+05_train.py — Train a GNN or MLP model for IC50 (pIC50) regression.
 
 Usage
 -----
-    python scripts/05_train.py
-    python scripts/05_train.py --split-map scaffold_split.parquet \\
-                               --model gcn --run-name experiment_01
-
-Extending with new model types
--------------------------------
-Add a branch to ``src/models/gcn.py::build_model()`` and pass ``--model <your_key>``.
+    python scripts/05_train.py --model gcn
+    python scripts/05_train.py --model mlp
+    python scripts/05_train.py --model gcn --loss mae --split random
+    python scripts/05_train.py --model mlp --loss mse --split scaffold --run-name mlp_scaffold_01
 """
 
 import argparse
 import logging
 import sys
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import pandas as pd
 import torch
 import torch.nn as nn
 
 import config
-from src.models import build_model
-from src.training.dataset import create_graph_dataloaders
+from src.enums import LossFunction, ModelType, SplitStrategy
+from src.models import build_model, build_mlp
+from src.training.dataset import create_graph_dataloaders, create_fp_dataloaders
 from src.training.trainer import run_training, resolve_device
 from src.training.metrics import format_metrics
 
@@ -37,33 +35,47 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+_LOSS_FNS = {
+    LossFunction.MSE: nn.MSELoss,
+    LossFunction.MAE: nn.L1Loss,
+}
+
 
 def parse_args() -> argparse.Namespace:
-    default_run_name = datetime.now().strftime("%Y%m%d_%H%M%S")
     parser = argparse.ArgumentParser(
-        description="Train a GNN model for pIC50 regression.",
+        description="Train a GNN or MLP model for pIC50 regression.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "--split-map",
-        type=str,
-        default="scaffold_split.parquet",
-        metavar="FILENAME",
-        help="Filename of the split-map Parquet file inside SPLITS_DIR.",
+        "--model",
+        type=ModelType,
+        required=True,
+        choices=list(ModelType),
+        help="Model architecture to train.",
     )
     parser.add_argument(
-        "--model",
-        type=str,
-        default="gcn",
-        choices=["gcn"],
-        help="Model architecture to train.",
+        "--loss",
+        type=LossFunction,
+        default=LossFunction.MSE,
+        choices=list(LossFunction),
+        help="Loss function.",
+    )
+    parser.add_argument(
+        "--split",
+        type=SplitStrategy,
+        default=SplitStrategy.SCAFFOLD,
+        choices=list(SplitStrategy),
+        help="Splitting strategy to use for training.",
     )
     parser.add_argument(
         "--run-name",
         type=str,
-        default=default_run_name,
+        default=None,
         metavar="NAME",
-        help="Identifier for this run. Model saved as MODELS_DIR/<run-name>.pt",
+        help=(
+            "Identifier for this run. Model saved as MODELS_DIR/<run-name>.pt. "
+            "Defaults to <model>_<split>_<loss>."
+        ),
     )
     parser.add_argument(
         "--device",
@@ -78,48 +90,76 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    split_map_path = config.PATHS["SPLITS_DIR"] / args.split_map
+    split_map_path = config.PATHS["SPLITS_DIR"] / f"{args.split}_split.parquet"
     if not split_map_path.exists():
         raise FileNotFoundError(
-            f"Split map not found: {split_map_path}\nRun 03_split.py first."
+            f"Split map not found: {split_map_path}\n"
+            f"Run: 03_split.py --split {args.split}"
         )
 
-    split_graphs_dir = config.PATHS["GRAPHS_DIR"] / split_map_path.stem
-    if not split_graphs_dir.exists():
-        raise FileNotFoundError(
-            f"Graph data not found: {split_graphs_dir}\nRun 04_build_graphs.py first."
-        )
+    split_map_df = pd.read_parquet(split_map_path, engine="pyarrow")
+    split_map: dict[int, str] = dict(
+        zip(split_map_df["activity_id"].tolist(), split_map_df["split"].tolist())
+    )
 
-    model_save_path = config.PATHS["MODELS_DIR"] / f"{args.run_name}.pt"
+    run_name = args.run_name or f"{args.model}_{args.split}_{args.loss}"
+    model_save_path = config.PATHS["MODELS_DIR"] / f"{run_name}.pt"
     device = resolve_device(args.device)
+    loss_fn = _LOSS_FNS[args.loss]()
 
-    logger.info("=== GNN Training ===")
+    logger.info("=== Training [model=%s  loss=%s  split=%s] ===", args.model, args.loss, args.split)
     logger.info("Split map   : %s", split_map_path)
-    logger.info("Model       : %s", args.model)
-    logger.info("Run name    : %s", args.run_name)
+    logger.info("Run name    : %s", run_name)
     logger.info("Model save  : %s", model_save_path)
     logger.info("Device      : %s", device)
 
-    model = build_model(
-        model_key=args.model,
-        training_cfg=config.TRAINING,
-        graph_cfg=config.GRAPH,
-    )
-    logger.info("Model parameters: %d", sum(p.numel() for p in model.parameters() if p.requires_grad))
+    if args.model == ModelType.GCN:
+        chunks_dir = config.PATHS["GRAPHS_DIR"]
+        if not any(chunks_dir.glob("chunk_*.pt")):
+            raise FileNotFoundError(
+                f"No graph chunks found in {chunks_dir}\n"
+                "Run 04_build_features.py --features graphs first."
+            )
+        model = build_model(
+            model_key="gcn",
+            training_cfg=config.TRAINING,
+            graph_cfg=config.GRAPH,
+        )
+        train_cfg = config.TRAINING
+        train_loader, val_loader, test_loader = create_graph_dataloaders(
+            chunks_dir=chunks_dir,
+            split_map=split_map,
+            batch_size=train_cfg["BATCH_SIZE"],
+            eval_batch_size=train_cfg["EVAL_BATCH_SIZE"],
+            num_workers=train_cfg.get("NUM_WORKERS", 0),
+        )
+    else:  # mlp
+        chunks_dir = config.PATHS["FINGERPRINTS_DIR"]
+        if not any(chunks_dir.glob("chunk_*.pt")):
+            raise FileNotFoundError(
+                f"No fingerprint chunks found in {chunks_dir}\n"
+                "Run 04_build_features.py --features fingerprints first."
+            )
+        model = build_mlp(
+            training_cfg=config.MLP_TRAINING,
+            fingerprint_cfg=config.FINGERPRINT,
+        )
+        train_cfg = config.MLP_TRAINING
+        train_loader, val_loader, test_loader = create_fp_dataloaders(
+            chunks_dir=chunks_dir,
+            split_map=split_map,
+            batch_size=train_cfg["BATCH_SIZE"],
+            eval_batch_size=train_cfg["EVAL_BATCH_SIZE"],
+            num_workers=train_cfg.get("NUM_WORKERS", 0),
+        )
 
-    train_loader, val_loader, test_loader = create_graph_dataloaders(
-        split_graphs_dir=split_graphs_dir,
-        batch_size=config.TRAINING["BATCH_SIZE"],
-        eval_batch_size=config.TRAINING["EVAL_BATCH_SIZE"],
-        num_workers=config.TRAINING.get("NUM_WORKERS", 0),
-    )
+    logger.info("Model parameters: %d", sum(p.numel() for p in model.parameters() if p.requires_grad))
 
     optimizer = torch.optim.Adam(
         model.parameters(),
-        lr=config.TRAINING["LEARNING_RATE"],
-        weight_decay=config.TRAINING["WEIGHT_DECAY"],
+        lr=train_cfg["LEARNING_RATE"],
+        weight_decay=train_cfg["WEIGHT_DECAY"],
     )
-    loss_fn = nn.MSELoss()
 
     results = run_training(
         model=model,
@@ -128,8 +168,8 @@ def main() -> None:
         test_loader=test_loader,
         optimizer=optimizer,
         loss_fn=loss_fn,
-        max_epochs=config.TRAINING["MAX_EPOCHS"],
-        patience=config.TRAINING["PATIENCE"],
+        max_epochs=train_cfg["MAX_EPOCHS"],
+        patience=train_cfg["PATIENCE"],
         model_save_path=model_save_path,
         device=device,
     )
@@ -138,7 +178,7 @@ def main() -> None:
 
     print()
     print("=" * 55)
-    print(f"Training Complete — Run: {args.run_name}")
+    print(f"Training Complete — Run: {run_name}")
     print("=" * 55)
     print(f"  Best epoch (0-based): {history['best_epoch']}")
     print(f"  Best val RMSE       : {history['best_val_rmse']:.4f}")

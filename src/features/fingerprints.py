@@ -40,30 +40,33 @@ def smiles_to_morgan(smiles: str, radius: int = 2, n_bits: int = 2048) -> np.nda
     return np.array(fp, dtype=np.float32)
 
 
-def build_fingerprints_by_split(
+def build_fingerprints(
     cleaned_dir: Path,
-    split_map_path: Path,
-    output_base: Path,
+    output_dir: Path,
     radius: int,
     n_bits: int,
     chunk_size: int,
-) -> dict[str, int]:
-    """Build Morgan fingerprint chunks from cleaned parquets, split into train/val/test.
+) -> int:
+    """Build Morgan fingerprint chunks from cleaned parquets into a flat directory.
 
     Reads every ``batch_*.parquet`` in *cleaned_dir*, converts each SMILES to a
-    Morgan fingerprint, looks up its split, and buffers rows until *chunk_size*
-    is reached — then flushes a ``chunk_NNNN.pt`` file containing a
-    ``(X, y)`` tuple (``X: Tensor[N, n_bits]``, ``y: Tensor[N]``).
+    Morgan fingerprint, and buffers rows until *chunk_size* is reached — then
+    flushes a ``chunk_NNNN.pt`` file containing a ``(X, y, activity_ids)`` tuple:
+
+    - ``X``: ``Tensor[N, n_bits]`` — Morgan bit vectors (float32)
+    - ``y``: ``Tensor[N]``          — pIC50 labels (float32)
+    - ``activity_ids``: ``Tensor[N]`` — ChEMBL activity IDs (int64)
+
+    The ``activity_ids`` field lets downstream datasets apply any split map at
+    load time without recomputing fingerprints.
 
     Parameters
     ----------
     cleaned_dir:
         Directory containing cleaned ``batch_*.parquet`` files.
-    split_map_path:
-        Split-map Parquet file (columns: activity_id, split).
-    output_base:
-        Root output directory. ``train/``, ``val/``, ``test/`` subdirs are
-        created here.
+    output_dir:
+        Flat output directory.  ``chunk_*.pt`` and ``metadata.json`` are
+        written here directly (no train/val/test subdirs).
     radius:
         Morgan fingerprint radius.
     n_bits:
@@ -73,72 +76,55 @@ def build_fingerprints_by_split(
 
     Returns
     -------
-    dict[str, int]
-        Total sample counts per split: ``{'train': N, 'val': N, 'test': N}``.
+    int
+        Total number of fingerprints written.
     """
-    cleaned_dir    = Path(cleaned_dir)
-    split_map_path = Path(split_map_path)
-    output_base    = Path(output_base)
-
-    split_map = pd.read_parquet(split_map_path, engine="pyarrow")
-    activity_to_split: dict[int, str] = dict(
-        zip(split_map["activity_id"].tolist(), split_map["split"].tolist())
-    )
-
-    splits = ("train", "val", "test")
-    for s in splits:
-        (output_base / s).mkdir(parents=True, exist_ok=True)
-
-    # Buffers: lists of (fp_array, label) rows
-    buffers:      dict[str, list[tuple[np.ndarray, float]]] = {s: [] for s in splits}
-    chunk_counts: dict[str, int]                            = {s: 0  for s in splits}
-    total_counts: dict[str, int]                            = {s: 0  for s in splits}
-    skipped = 0
+    cleaned_dir = Path(cleaned_dir)
+    output_dir  = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_files = sorted(cleaned_dir.glob("batch_*.parquet"))
     if not parquet_files:
         raise FileNotFoundError(f"No cleaned parquet files found in {cleaned_dir}")
 
+    # Each row: (fp_array, label, activity_id)
+    buffer:      list[tuple[np.ndarray, float, int]] = []
+    chunk_count: int = 0
+    total:       int = 0
+    skipped:     int = 0
+
     for parquet_path in tqdm(parquet_files, desc="Building fingerprints", unit="file"):
         df = pd.read_parquet(parquet_path, engine="pyarrow")
 
         for _, row in tqdm(df.iterrows(), total=len(df), leave=False, unit="mol"):
-            split = activity_to_split.get(int(row["activity_id"]))
-            if split is None:
-                continue
-
             fp = smiles_to_morgan(row["std_smiles"], radius=radius, n_bits=n_bits)
             if fp is None:
                 skipped += 1
                 continue
 
-            buffers[split].append((fp, float(row["pchembl_value"])))
-            total_counts[split] += 1
+            buffer.append((fp, float(row["pchembl_value"]), int(row["activity_id"])))
+            total += 1
 
-            if len(buffers[split]) >= chunk_size:
-                _flush(buffers[split], output_base / split, chunk_counts[split])
-                chunk_counts[split] += 1
-                buffers[split] = []
+            if len(buffer) >= chunk_size:
+                _flush(buffer, output_dir, chunk_count)
+                chunk_count += 1
+                buffer = []
 
-    # Flush remaining rows
-    for split, buf in buffers.items():
-        if buf:
-            _flush(buf, output_base / split, chunk_counts[split])
+    if buffer:
+        _flush(buffer, output_dir, chunk_count)
 
-    # Write metadata
-    for split in splits:
-        meta = {"total_samples": total_counts[split]}
-        (output_base / split / "metadata.json").write_text(json.dumps(meta))
-        logger.info("%s: %d samples", split, total_counts[split])
+    meta = {"total_samples": total}
+    (output_dir / "metadata.json").write_text(json.dumps(meta))
+    logger.info("Total fingerprints written: %d", total)
 
     if skipped:
         logger.warning("Skipped %d rows (invalid SMILES)", skipped)
 
-    return total_counts
+    return total
 
 
-def _flush(rows: list[tuple[np.ndarray, float]], split_dir: Path, n: int) -> None:
-    fps    = np.stack([r[0] for r in rows])
-    labels = np.array([r[1] for r in rows], dtype=np.float32)
-    chunk  = (torch.from_numpy(fps), torch.from_numpy(labels))
-    torch.save(chunk, split_dir / f"chunk_{n:04d}.pt")
+def _flush(rows: list[tuple[np.ndarray, float, int]], out_dir: Path, n: int) -> None:
+    fps  = torch.from_numpy(np.stack([r[0] for r in rows]))
+    ys   = torch.from_numpy(np.array([r[1] for r in rows], dtype=np.float32))
+    ids  = torch.tensor([r[2] for r in rows], dtype=torch.long)
+    torch.save((fps, ys, ids), out_dir / f"chunk_{n:04d}.pt")
