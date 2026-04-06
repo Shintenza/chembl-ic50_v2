@@ -1,12 +1,3 @@
-"""
-SMILES standardisation and molecular validity utilities.
-
-All thresholds are read from ``config.CLEANING`` so they remain in one
-place throughout the project.
-"""
-
-from __future__ import annotations
-
 import logging
 
 from rdkit import Chem
@@ -21,33 +12,18 @@ import config
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Module-level RDKit utilities (constructed once for performance)
-# ---------------------------------------------------------------------------
-
-_REMOVER = SaltRemover.SaltRemover()
-_UNCHARGER = rdMolStandardize.Uncharger()
-_LARGEST_FRAG = rdMolStandardize.LargestFragmentChooser()
+SALT_REMOVER = SaltRemover.SaltRemover()
+UNCHARGER = rdMolStandardize.Uncharger()
+LARGEST_FRAG_CHOOSER = rdMolStandardize.LargestFragmentChooser()
 
 
 def standardize_smiles(smiles: str) -> str | None:
     """Return a canonical, standardised SMILES string, or ``None`` on failure.
 
     Pipeline applied in order:
-    1. Parse with RDKit — return ``None`` if unparseable.
+    1. Parse with RDKit
     2. Select largest fragment (removes salts/counterions).
-    3. Neutralise formal charges where chemically reasonable.
-    4. Generate canonical SMILES.
-
-    Parameters
-    ----------
-    smiles:
-        Raw SMILES string as stored in ChEMBL.
-
-    Returns
-    -------
-    str | None
-        Standardised canonical SMILES, or ``None`` if standardisation fails.
+    3. Neutralise formal charges where chemically reasonable
     """
     if not smiles or not isinstance(smiles, str):
         return None
@@ -57,13 +33,11 @@ def standardize_smiles(smiles: str) -> str | None:
         if mol is None:
             return None
 
-        # Keep the largest organic fragment (handles salts like "CC.Cl")
-        mol = _LARGEST_FRAG.choose(mol)
+        mol = LARGEST_FRAG_CHOOSER.choose(mol)
         if mol is None:
             return None
 
-        # Neutralise charges (e.g. carboxylate → carboxylic acid)
-        mol = _UNCHARGER.uncharge(mol)
+        mol = UNCHARGER.uncharge(mol)
         if mol is None:
             return None
 
@@ -95,7 +69,7 @@ def is_valid_molecule(smiles: str) -> bool:
     bool
         ``True`` if the molecule passes all filters, ``False`` otherwise.
     """
-    if not smiles:
+    if len(smiles) == 0:
         return False
 
     try:
@@ -104,7 +78,9 @@ def is_valid_molecule(smiles: str) -> bool:
             return False
 
         num_heavy = mol.GetNumHeavyAtoms()
-        if not (config.CLEANING["MIN_ATOMS"] <= num_heavy <= config.CLEANING["MAX_ATOMS"]):
+        if not (
+            config.CLEANING["MIN_ATOMS"] <= num_heavy <= config.CLEANING["MAX_ATOMS"]
+        ):
             return False
 
         mw = Descriptors.ExactMolWt(mol)

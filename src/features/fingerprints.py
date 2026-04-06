@@ -1,10 +1,8 @@
-"""Morgan fingerprint generation and fingerprint dataset builder."""
-
-from __future__ import annotations
-
+from rdkit.Chem.AllChem import FingerprintGenerator64
 import json
 import logging
 from pathlib import Path
+from rdkit.Chem import rdFingerprintGenerator
 
 import numpy as np
 import pandas as pd
@@ -16,27 +14,13 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-def smiles_to_morgan(smiles: str, radius: int = 2, n_bits: int = 2048) -> np.ndarray | None:
-    """Convert a SMILES string to a Morgan fingerprint bit vector.
-
-    Parameters
-    ----------
-    smiles:
-        Input SMILES string.
-    radius:
-        Morgan algorithm radius (number of hops).
-    n_bits:
-        Length of the bit vector.
-
-    Returns
-    -------
-    np.ndarray of shape ``(n_bits,)`` and dtype ``float32``, or ``None``
-    if the SMILES cannot be parsed.
-    """
+def smiles_to_morgan(
+    generator: FingerprintGenerator64, smiles: str
+) -> np.ndarray | None:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
-    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=radius, nBits=n_bits)
+    fp = generator.GetFingerprint(mol)
     return np.array(fp, dtype=np.float32)
 
 
@@ -56,9 +40,6 @@ def build_fingerprints(
     - ``X``: ``Tensor[N, n_bits]`` — Morgan bit vectors (float32)
     - ``y``: ``Tensor[N]``          — pIC50 labels (float32)
     - ``activity_ids``: ``Tensor[N]`` — ChEMBL activity IDs (int64)
-
-    The ``activity_ids`` field lets downstream datasets apply any split map at
-    load time without recomputing fingerprints.
 
     Parameters
     ----------
@@ -80,7 +61,7 @@ def build_fingerprints(
         Total number of fingerprints written.
     """
     cleaned_dir = Path(cleaned_dir)
-    output_dir  = Path(output_dir)
+    output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     parquet_files = sorted(cleaned_dir.glob("batch_*.parquet"))
@@ -88,16 +69,18 @@ def build_fingerprints(
         raise FileNotFoundError(f"No cleaned parquet files found in {cleaned_dir}")
 
     # Each row: (fp_array, label, activity_id)
-    buffer:      list[tuple[np.ndarray, float, int]] = []
+    buffer: list[tuple[np.ndarray, float, int]] = []
     chunk_count: int = 0
-    total:       int = 0
-    skipped:     int = 0
+    total: int = 0
+    skipped: int = 0
+
+    mfpgen = rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=n_bits)
 
     for parquet_path in tqdm(parquet_files, desc="Building fingerprints", unit="file"):
         df = pd.read_parquet(parquet_path, engine="pyarrow")
 
         for _, row in tqdm(df.iterrows(), total=len(df), leave=False, unit="mol"):
-            fp = smiles_to_morgan(row["std_smiles"], radius=radius, n_bits=n_bits)
+            fp = smiles_to_morgan(mfpgen, row["std_smiles"])
             if fp is None:
                 skipped += 1
                 continue
@@ -124,7 +107,7 @@ def build_fingerprints(
 
 
 def _flush(rows: list[tuple[np.ndarray, float, int]], out_dir: Path, n: int) -> None:
-    fps  = torch.from_numpy(np.stack([r[0] for r in rows]))
-    ys   = torch.from_numpy(np.array([r[1] for r in rows], dtype=np.float32))
-    ids  = torch.tensor([r[2] for r in rows], dtype=torch.long)
+    fps = torch.from_numpy(np.stack([r[0] for r in rows]))
+    ys = torch.from_numpy(np.array([r[1] for r in rows], dtype=np.float32))
+    ids = torch.tensor([r[2] for r in rows], dtype=torch.long)
     torch.save((fps, ys, ids), out_dir / f"chunk_{n:04d}.pt")

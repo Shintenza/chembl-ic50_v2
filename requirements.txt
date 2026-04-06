@@ -1,4 +1,5 @@
 torch
+sqlalchemy
 torch-geometric
 rdkit
 psycopg2-binary

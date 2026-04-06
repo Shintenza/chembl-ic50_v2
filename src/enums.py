@@ -16,31 +16,37 @@ class _StrEnum(str, Enum):
 
 class Split(_StrEnum):
     """Dataset partition label."""
+
     TRAIN = "train"
-    VAL   = "val"
-    TEST  = "test"
+    VAL = "val"
+    TEST = "test"
 
 
 class SplitStrategy(_StrEnum):
     """Splitting algorithm used to assign molecules to partitions."""
+
     SCAFFOLD = "scaffold"
-    RANDOM   = "random"
+    RANDOM = "random"
 
 
 class ModelType(_StrEnum):
     """Model architecture."""
+
     GCN = "gcn"
     MLP = "mlp"
 
 
 class LossFunction(_StrEnum):
     """Training loss function."""
+
     MSE = "mse"
     MAE = "mae"
+    HUBER = "huber"
 
 
 class FeatureType(_StrEnum):
     """Molecular feature representation to build."""
-    GRAPHS        = "graphs"
-    FINGERPRINTS  = "fingerprints"
-    ALL           = "all"
+
+    GRAPHS = "graphs"
+    FINGERPRINTS = "fingerprints"
+    ALL = "all"

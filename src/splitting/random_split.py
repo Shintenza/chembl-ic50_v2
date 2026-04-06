@@ -1,7 +1,4 @@
-"""Simple random train/val/test dataset splitting."""
-
-from __future__ import annotations
-
+from .utils import validate_splits
 import logging
 import random
 from pathlib import Path
@@ -14,57 +11,15 @@ from src.enums import Split
 logger = logging.getLogger(__name__)
 
 
-def random_split(
-    n: int,
-    frac_train: float,
-    frac_val: float,
-    frac_test: float,
-    seed: int,
-) -> tuple[list[int], list[int], list[int]]:
-    """Randomly shuffle *n* indices and split into train / val / test.
-
-    Parameters
-    ----------
-    n:
-        Total number of samples.
-    frac_train, frac_val, frac_test:
-        Fractional sizes for each split (must sum to 1).
-    seed:
-        Random seed for reproducibility.
-
-    Returns
-    -------
-    tuple[list[int], list[int], list[int]]
-        ``(train_idx, val_idx, test_idx)`` — lists of integer indices.
-    """
-    assert abs(frac_train + frac_val + frac_test - 1.0) < 1e-6, (
-        "Fractions must sum to 1."
-    )
-    indices = list(range(n))
-    random.Random(seed).shuffle(indices)
-    n_train = int(frac_train * n)
-    n_val = int(frac_val * n)
-    train_idx = indices[:n_train]
-    val_idx = indices[n_train : n_train + n_val]
-    test_idx = indices[n_train + n_val :]
-    logger.info(
-        "random_split: train=%d, val=%d, test=%d (total=%d)",
-        len(train_idx), len(val_idx), len(test_idx), n,
-    )
-    return train_idx, val_idx, test_idx
-
-
+@validate_splits
 def build_random_split_map(
     cleaned_dir: Path,
     frac_train: float,
     frac_val: float,
-    frac_test: float,
     seed: int,
 ) -> pd.DataFrame:
-    """Build a random split map from cleaned parquet files.
-
-    Reads only ``activity_id`` from each ``batch_*.parquet`` in *cleaned_dir*,
-    randomly assigns each molecule to train / val / test.
+    """
+    Build a random split map from cleaned parquet files.
 
     Parameters
     ----------
@@ -85,27 +40,23 @@ def build_random_split_map(
     if not parquet_files:
         raise FileNotFoundError(f"No cleaned parquet files found in {cleaned_dir}")
 
-    chunks: list[pd.DataFrame] = []
-    for pq_path in tqdm(parquet_files, desc="Loading cleaned data", unit="file"):
-        df = pd.read_parquet(pq_path, engine="pyarrow", columns=["activity_id"])
-        chunks.append(df)
+    df = pd.concat(
+        (
+            pd.read_parquet(pq_path, engine="pyarrow", columns=["activity_id"])
+            for pq_path in parquet_files
+        ),
+        ignore_index=True,
+    )
+    df = df.sample(frac=1, random_state=seed).reset_index(drop=True)
 
-    all_df = pd.concat(chunks, ignore_index=True)
+    n = len(df)
+    train_end = int(frac_train * n)
+    val_end = train_end + int(frac_val * n)
 
-    train_idx, val_idx, test_idx = random_split(
-        n=len(all_df),
-        frac_train=frac_train,
-        frac_val=frac_val,
-        frac_test=frac_test,
-        seed=seed,
+    splits = (
+        [Split.TRAIN] * train_end
+        + [Split.VAL] * (val_end - train_end)
+        + [Split.TEST] * (n - val_end)
     )
 
-    split_labels = pd.array([""] * len(all_df), dtype="object")
-    split_labels[train_idx] = Split.TRAIN
-    split_labels[val_idx]   = Split.VAL
-    split_labels[test_idx]  = Split.TEST
-
-    return pd.DataFrame({
-        "activity_id": all_df["activity_id"],
-        "split": split_labels,
-    })
+    return pd.DataFrame({"activity_id": df["activity_id"], "split": splits})

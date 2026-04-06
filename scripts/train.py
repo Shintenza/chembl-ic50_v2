@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 _LOSS_FNS = {
     LossFunction.MSE: nn.MSELoss,
     LossFunction.MAE: nn.L1Loss,
+    LossFunction.HUBER: nn.HuberLoss,
 }
 
 
@@ -107,7 +108,12 @@ def main() -> None:
     device = resolve_device(args.device)
     loss_fn = _LOSS_FNS[args.loss]()
 
-    logger.info("=== Training [model=%s  loss=%s  split=%s] ===", args.model, args.loss, args.split)
+    logger.info(
+        "=== Training [model=%s  loss=%s  split=%s] ===",
+        args.model,
+        args.loss,
+        args.split,
+    )
     logger.info("Split map   : %s", split_map_path)
     logger.info("Run name    : %s", run_name)
     logger.info("Model save  : %s", model_save_path)
@@ -153,7 +159,10 @@ def main() -> None:
             num_workers=train_cfg.get("NUM_WORKERS", 0),
         )
 
-    logger.info("Model parameters: %d", sum(p.numel() for p in model.parameters() if p.requires_grad))
+    logger.info(
+        "Model parameters: %d",
+        sum(p.numel() for p in model.parameters() if p.requires_grad),
+    )
 
     optimizer = torch.optim.Adam(
         model.parameters(),

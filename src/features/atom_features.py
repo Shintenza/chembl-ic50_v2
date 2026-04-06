@@ -1,43 +1,25 @@
-"""
-Atom featuriser for molecular graph construction.
-
-Each atom is described by a 38-dimensional binary/real vector assembled
-from one-hot encodings of key chemical properties.
-
-Dimension breakdown
--------------------
-Atom type (element symbol)  13   common medicinal-chemistry elements + "other"
-Degree (num heavy neighbours) 6   0-4 + "other"
-Formal charge                6   -2, -1, 0, +1, +2 + "other"
-Hybridisation                6   SP, SP2, SP3, SP3D, SP3D2 + "other"
-Is aromatic                  1   bool
-Is in ring                   1   bool
-Total num Hs (implicit+exp)  5   0-3 + "other"
-                           ----
-Total                       38
-"""
-
-from __future__ import annotations
-
 import numpy as np
 from rdkit.Chem import rdchem
 
-# ---------------------------------------------------------------------------
-# Public constant — keeps config.py in sync
-# ---------------------------------------------------------------------------
-
 ATOM_FEATURE_DIM: int = 38
 
-# ---------------------------------------------------------------------------
-# Allowed value lists for one-hot encodings
-# ---------------------------------------------------------------------------
-
 _ATOM_TYPES: list[str] = [
-    "C", "N", "O", "S", "F", "Si", "P", "Cl", "Br", "Mg",
-    "Na", "Ca", "other",
+    "C",
+    "N",
+    "O",
+    "S",
+    "F",
+    "Si",
+    "P",
+    "Cl",
+    "Br",
+    "Mg",
+    "Na",
+    "Ca",
+    "other",
 ]  # 13 entries (last entry is the explicit "other" bucket — add_other=False)
 
-_DEGREES: list[int] = [0, 1, 2, 3, 4]          # 5 entries + "other" → 6
+_DEGREES: list[int] = [0, 1, 2, 3, 4]  # 5 entries + "other" → 6
 _FORMAL_CHARGES: list[int] = [-2, -1, 0, 1, 2]  # 5 entries + "other" → 6
 _HYBRIDISATIONS: list = [
     rdchem.HybridizationType.SP,
@@ -46,7 +28,7 @@ _HYBRIDISATIONS: list = [
     rdchem.HybridizationType.SP3D,
     rdchem.HybridizationType.SP3D2,
 ]  # 5 entries + "other" → 6
-_NUM_HS: list[int] = [0, 1, 2, 3]               # 4 entries + "other" → 5
+_NUM_HS: list[int] = [0, 1, 2, 3]  # 4 entries + "other" → 5
 
 
 def one_hot(val, allowed: list, add_other: bool = True) -> list[int]:
@@ -117,17 +99,17 @@ def atom_features(atom: rdchem.Atom) -> np.ndarray:
     # → 5 dims
 
     features = (
-        feat_atom_type   # 13
-        + feat_degree    #  6
-        + feat_charge    #  6
-        + feat_hybrid    #  6
+        feat_atom_type  # 13
+        + feat_degree  #  6
+        + feat_charge  #  6
+        + feat_hybrid  #  6
         + feat_aromatic  #  1
-        + feat_in_ring   #  1
-        + feat_hs        #  5
-    )                    # = 38
+        + feat_in_ring  #  1
+        + feat_hs  #  5
+    )  # = 38
 
-    assert len(features) == ATOM_FEATURE_DIM, (
-        f"Expected {ATOM_FEATURE_DIM} features, got {len(features)}"
-    )
+    assert (
+        len(features) == ATOM_FEATURE_DIM
+    ), f"Expected {ATOM_FEATURE_DIM} features, got {len(features)}"
 
     return np.array(features, dtype=np.float32)

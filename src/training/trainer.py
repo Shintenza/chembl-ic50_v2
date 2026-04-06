@@ -1,13 +1,3 @@
-"""
-Model-agnostic training loop with early stopping.
-
-Works with any :class:`~src.models.base.IC50Model` subclass. The trainer
-never inspects the batch directly — it always delegates to
-``model.unpack_batch(batch, device)`` which returns ``(inputs, labels)``.
-"""
-
-from __future__ import annotations
-
 import gc
 import logging
 from pathlib import Path
@@ -24,21 +14,11 @@ from .metrics import compute_metrics, format_metrics
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Device helper
-# ---------------------------------------------------------------------------
-
-
 def resolve_device(device_override: str | None = None) -> torch.device:
     """Return the target device, auto-detecting CUDA if no override is given."""
     if device_override is not None:
         return torch.device(device_override)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-# ---------------------------------------------------------------------------
-# Single-epoch training
-# ---------------------------------------------------------------------------
 
 
 def train_epoch(
@@ -71,11 +51,6 @@ def train_epoch(
     return total_loss / max(total_samples, 1)
 
 
-# ---------------------------------------------------------------------------
-# Evaluation
-# ---------------------------------------------------------------------------
-
-
 def evaluate(
     model: IC50Model,
     loader: DataLoader,
@@ -95,16 +70,11 @@ def evaluate(
             all_labels.append(labels.cpu().numpy().ravel())
             del inputs, labels, preds
 
-    preds_arr  = np.concatenate(all_preds)
+    preds_arr = np.concatenate(all_preds)
     labels_arr = np.concatenate(all_labels)
     del all_preds, all_labels
     gc.collect()
     return compute_metrics(preds_arr, labels_arr)
-
-
-# ---------------------------------------------------------------------------
-# Full training loop
-# ---------------------------------------------------------------------------
 
 
 def train(
@@ -132,7 +102,7 @@ def train(
     val_metrics_history: list[dict] = []
 
     for epoch in range(max_epochs):
-        train_loss  = train_epoch(model, train_loader, optimizer, loss_fn, device)
+        train_loss = train_epoch(model, train_loader, optimizer, loss_fn, device)
         val_metrics = evaluate(model, val_loader, device)
 
         train_losses.append(train_loss)
@@ -175,11 +145,6 @@ def train(
         "best_epoch": best_epoch,
         "best_val_rmse": best_val_rmse,
     }
-
-
-# ---------------------------------------------------------------------------
-# Convenience orchestrator
-# ---------------------------------------------------------------------------
 
 
 def run_training(

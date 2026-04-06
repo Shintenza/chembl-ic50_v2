@@ -1,12 +1,3 @@
-"""
-Regression evaluation metrics for the IC50 prediction pipeline.
-
-All metrics operate on NumPy arrays and are intentionally independent of
-the training framework so they can be used in evaluation scripts too.
-"""
-
-from __future__ import annotations
-
 import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 

@@ -1,13 +1,3 @@
-"""
-Batch cleaning pipeline.
-
-Reads raw Parquet batches produced by the extractor, applies SMILES
-standardisation and molecular validity filters, then writes cleaned
-Parquet files ready for graph building.
-"""
-
-from __future__ import annotations
-
 import logging
 import sys
 import os
@@ -24,58 +14,21 @@ logger = logging.getLogger(__name__)
 
 
 def clean_batch(input_path: Path, output_path: Path) -> dict:
-    """Clean a single raw batch Parquet file and write the result.
-
-    Steps applied in order:
-
-    1. Read the raw Parquet file.
-    2. Standardise SMILES via :func:`~src.cleaning.smiles_utils.standardize_smiles`;
-       rows where standardisation returns ``None`` are dropped.
-    3. Validate molecules via :func:`~src.cleaning.smiles_utils.is_valid_molecule`;
-       rows that fail physicochemical filters are dropped.
-    4. Filter pchembl_value to the range [MIN_PCHEMBL, MAX_PCHEMBL].
-    5. Write the cleaned DataFrame to *output_path* as Parquet.
-
-    Parameters
-    ----------
-    input_path:
-        Path to a raw ``batch_NNNN.parquet`` file.
-    output_path:
-        Destination path for the cleaned Parquet file.
-
-    Returns
-    -------
-    dict
-        Statistics with keys: ``input_rows``, ``output_rows``,
-        ``dropped_invalid_smiles``, ``dropped_invalid_mol``,
-        ``dropped_pchembl_range``.
-    """
-    input_path = Path(input_path)
-    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_parquet(input_path, engine="pyarrow")
     input_rows: int = len(df)
 
-    # ------------------------------------------------------------------
-    # Step 1 — Standardise SMILES
-    # ------------------------------------------------------------------
     df["std_smiles"] = df["canonical_smiles"].map(standardize_smiles)
     n_after_standardise = df["std_smiles"].notna().sum()
     dropped_invalid_smiles = input_rows - n_after_standardise
     df = df[df["std_smiles"].notna()].copy()
 
-    # ------------------------------------------------------------------
-    # Step 2 — Molecular validity (atom count + MW)
-    # ------------------------------------------------------------------
     valid_mask = df["std_smiles"].map(is_valid_molecule)
     n_after_validity = valid_mask.sum()
     dropped_invalid_mol = n_after_standardise - n_after_validity
     df = df[valid_mask].copy()
 
-    # ------------------------------------------------------------------
-    # Step 3 — pchembl_value range filter
-    # ------------------------------------------------------------------
     pchembl_mask = df["pchembl_value"].between(
         config.CLEANING["MIN_PCHEMBL"],
         config.CLEANING["MAX_PCHEMBL"],
@@ -85,10 +38,6 @@ def clean_batch(input_path: Path, output_path: Path) -> dict:
     dropped_pchembl_range = n_after_validity - n_after_pchembl
     df = df[pchembl_mask].copy()
 
-    # ------------------------------------------------------------------
-    # Persist
-    # ------------------------------------------------------------------
-    # Keep a clean column set; retain all original columns plus std_smiles.
     df.to_parquet(output_path, index=False, engine="pyarrow")
 
     stats = {
@@ -136,6 +85,7 @@ def clean_all_batches(raw_dir: Path, cleaned_dir: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
     records: list[dict] = []
+
     for batch_path in tqdm(batch_files, desc="Cleaning batches", unit="file"):
         out_path = cleaned_dir / batch_path.name
         stats = clean_batch(batch_path, out_path)

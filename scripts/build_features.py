@@ -1,21 +1,10 @@
-#!/usr/bin/env python3
 """
-04_build_features.py — Build molecular feature chunks (graphs and/or fingerprints).
-
 Usage
 -----
-    python scripts/04_build_features.py                      # build both
+    python scripts/04_build_features.py                         # build both
     python scripts/04_build_features.py --features graphs
     python scripts/04_build_features.py --features fingerprints
     python scripts/04_build_features.py --features all
-
-Outputs split-agnostic flat chunk files:
-    data/graphs/chunk_*.pt          — list[PyG Data], each with activity_id
-    data/fingerprints/chunk_*.pt    — (X, y, activity_ids) tuples
-
-Run once. All split strategies share the same chunk files.
-If chunks already exist the relevant build step is skipped — delete the
-directory manually to force a rebuild.
 """
 
 import argparse
@@ -59,7 +48,9 @@ def _already_built(out_dir: Path, label: str) -> bool:
         logger.warning(
             "%s: %d chunk file(s) already exist in %s — skipping. "
             "Delete the directory manually to force a rebuild.",
-            label, len(existing), out_dir,
+            label,
+            len(existing),
+            out_dir,
         )
         return True
     return False
