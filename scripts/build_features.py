@@ -16,8 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from src.enums import FeatureType
-from src.graph import build_graphs
-from src.features.fingerprints import build_fingerprints
+from src.features import build_graphs, build_fingerprints
 
 logging.basicConfig(
     level=logging.INFO,
