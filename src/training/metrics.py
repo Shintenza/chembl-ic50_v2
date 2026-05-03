@@ -3,20 +3,6 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 
 def compute_metrics(preds: np.ndarray, labels: np.ndarray) -> dict:
-    """Compute RMSE, R², and MAE between *preds* and *labels*.
-
-    Parameters
-    ----------
-    preds:
-        Model predictions, shape ``(N,)`` or ``(N, 1)``.
-    labels:
-        Ground-truth values, shape ``(N,)`` or ``(N, 1)``.
-
-    Returns
-    -------
-    dict
-        Dictionary with keys ``'rmse'``, ``'r2'``, ``'mae'`` (all floats).
-    """
     preds = np.asarray(preds).ravel()
     labels = np.asarray(labels).ravel()
 
@@ -32,19 +18,6 @@ def compute_metrics(preds: np.ndarray, labels: np.ndarray) -> dict:
 
 
 def format_metrics(metrics: dict) -> str:
-    """Return a human-readable string representation of *metrics*.
-
-    Parameters
-    ----------
-    metrics:
-        Dictionary as returned by :func:`compute_metrics`.
-
-    Returns
-    -------
-    str
-        Formatted string, e.g.
-        ``"RMSE: 0.5231 | R²: 0.8714 | MAE: 0.3918"``
-    """
     parts: list[str] = []
     if "rmse" in metrics:
         parts.append(f"RMSE: {metrics['rmse']:.4f}")

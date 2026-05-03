@@ -15,31 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 class ChunkedSplitDataset(IterableDataset, ABC):
-    """Streams samples from flat chunk files, filtered by a split map.
-
-    Each chunk file is loaded, its samples filtered to ``target_split`` via
-    ``split_map``, yielded, then immediately deleted from memory.  RAM usage
-    stays bounded to roughly one chunk at a time regardless of dataset size.
-
-    Multi-worker support: chunk files are distributed across workers in a
-    strided fashion (worker 0 gets files 0, N, 2N, ...; worker 1 gets
-    1, N+1, ...) so no sample is yielded twice.
-
-    Parameters
-    ----------
-    chunks_dir:
-        Directory containing flat ``chunk_*.pt`` files (no train/val/test
-        subdirs — all splits share the same files).
-    split_map:
-        Mapping of ``activity_id → split_name`` for the entire dataset.
-        Loaded once in the main process and inherited by workers via fork.
-    target_split:
-        Which split to yield: ``'train'``, ``'val'``, or ``'test'``.
-    shuffle:
-        If True, shuffles chunk order and within-chunk sample order on
-        every iteration.
-    """
-
     def __init__(
         self,
         chunks_dir: Path,
@@ -86,24 +61,17 @@ class ChunkedSplitDataset(IterableDataset, ABC):
 
 
 class GraphSplitDataset(ChunkedSplitDataset):
-    """Streams PyG ``Data`` objects from flat graph chunk files."""
-
     def _iter_chunk(self, chunk):
-        # chunk is list[Data]; each Data has an activity_id attribute
         for data in chunk:
             if self._split_map.get(int(data.activity_id)) == self._target_split:
                 yield data
 
 
 class FingerprintSplitDataset(ChunkedSplitDataset):
-    """Streams ``(fingerprint, label)`` tensor pairs from flat fingerprint chunk files."""
-
     def _iter_chunk(self, chunk):
-        # chunk is (Tensor[N, n_bits], Tensor[N], Tensor[N]) = (X, y, activity_ids)
-        x, y, activity_ids = chunk
-        for xi, yi, aid in zip(x, y, activity_ids):
+        for x, y, aid in chunk:
             if self._split_map.get(int(aid)) == self._target_split:
-                yield xi, yi
+                yield x, y
 
 
 def _make_loaders(

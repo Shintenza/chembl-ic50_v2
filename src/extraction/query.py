@@ -10,7 +10,6 @@ def build_extraction_query(offset: int, batch_size: int) -> str:
         act.standard_value,
         act.standard_units,
         act.pchembl_value,
-        act.data_validity_comment,
         act.assay_id,
         a.assay_type,
         a.confidence_score,
@@ -32,9 +31,8 @@ def build_extraction_query(offset: int, batch_size: int) -> str:
         AND act.pchembl_value     IS NOT NULL
         AND act.standard_value    > 0
         AND act.potential_duplicate = 0
-        AND a.assay_type       IN ('B', 'F')
-        AND a.confidence_score  = 9
-        AND td.target_type      = 'SINGLE PROTEIN'
+        AND a.confidence_score > 6
+        AND td.chembl_id = 'CHEMBL203'
     ORDER BY
         act.activity_id
     LIMIT  {batch_size}

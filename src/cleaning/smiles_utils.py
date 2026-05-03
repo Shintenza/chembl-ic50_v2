@@ -18,13 +18,6 @@ LARGEST_FRAG_CHOOSER = rdMolStandardize.LargestFragmentChooser()
 
 
 def standardize_smiles(smiles: str) -> str | None:
-    """Return a canonical, standardised SMILES string, or ``None`` on failure.
-
-    Pipeline applied in order:
-    1. Parse with RDKit
-    2. Select largest fragment (removes salts/counterions).
-    3. Neutralise formal charges where chemically reasonable
-    """
     if not smiles or not isinstance(smiles, str):
         return None
 
@@ -53,22 +46,6 @@ def standardize_smiles(smiles: str) -> str | None:
 
 
 def is_valid_molecule(smiles: str) -> bool:
-    """Return ``True`` if the molecule passes all physicochemical filters.
-
-    Filters applied (thresholds from ``config.CLEANING``):
-    - Heavy atom count in [MIN_ATOMS, MAX_ATOMS]
-    - Molecular weight in [MIN_MW, MAX_MW]
-
-    Parameters
-    ----------
-    smiles:
-        A *standardised* canonical SMILES (output of :func:`standardize_smiles`).
-
-    Returns
-    -------
-    bool
-        ``True`` if the molecule passes all filters, ``False`` otherwise.
-    """
     if len(smiles) == 0:
         return False
 

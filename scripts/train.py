@@ -14,6 +14,9 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+import warnings
+
+warnings.filterwarnings("ignore", message=".*The usage of `scatter.*")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -119,7 +122,7 @@ def main() -> None:
     logger.info("Model save  : %s", model_save_path)
     logger.info("Device      : %s", device)
 
-    if args.model == ModelType.GCN:
+    if args.model == ModelType.GNN:
         chunks_dir = config.PATHS["GRAPHS_DIR"]
         if not any(chunks_dir.glob("chunk_*.pt")):
             raise FileNotFoundError(
@@ -127,9 +130,7 @@ def main() -> None:
                 "Run 04_build_features.py --features graphs first."
             )
         model = build_model(
-            model_key="gcn",
-            training_cfg=config.TRAINING,
-            graph_cfg=config.GRAPH,
+            config.GRAPH,
         )
         train_cfg = config.TRAINING
         train_loader, val_loader, test_loader = create_graph_dataloaders(
@@ -139,7 +140,7 @@ def main() -> None:
             eval_batch_size=train_cfg["EVAL_BATCH_SIZE"],
             num_workers=train_cfg.get("NUM_WORKERS", 0),
         )
-    else:  # mlp
+    else:
         chunks_dir = config.PATHS["FINGERPRINTS_DIR"]
         if not any(chunks_dir.glob("chunk_*.pt")):
             raise FileNotFoundError(

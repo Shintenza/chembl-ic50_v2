@@ -6,7 +6,7 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-def validate_fractions(func: Callable[P, R]) -> Callable[P, R]:
+def validate_splits(func: Callable[P, R]) -> Callable[P, R]:
     @wraps(func)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         frac_train = kwargs.get("frac_train")

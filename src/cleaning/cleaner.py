@@ -54,27 +54,6 @@ def clean_batch(input_path: Path, output_path: Path) -> dict:
 
 
 def clean_all_batches(raw_dir: Path, cleaned_dir: Path) -> pd.DataFrame:
-    """Clean every batch file found in *raw_dir*.
-
-    Batch files are discovered by the glob pattern ``batch_*.parquet``
-    and processed in sorted order.  Each cleaned file is written to
-    *cleaned_dir* with the same filename.
-
-    Parameters
-    ----------
-    raw_dir:
-        Directory containing raw ``batch_NNNN.parquet`` files.
-    cleaned_dir:
-        Destination directory for cleaned Parquet files.
-
-    Returns
-    -------
-    pd.DataFrame
-        One row per processed batch with columns:
-        ``batch_file``, ``input_rows``, ``output_rows``,
-        ``dropped_invalid_smiles``, ``dropped_invalid_mol``,
-        ``dropped_pchembl_range``.
-    """
     raw_dir = Path(raw_dir)
     cleaned_dir = Path(cleaned_dir)
     cleaned_dir.mkdir(parents=True, exist_ok=True)

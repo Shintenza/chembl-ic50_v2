@@ -1,22 +1,6 @@
-"""
-Central configuration for the ChEMBL GNN IC50 prediction pipeline.
-
-All constants and paths are defined here. No other module should
-hardcode paths, directory names, or tuning hyperparameters.
-
-Database credentials are read from environment variables.  For local
-development, copy .env.example → .env and run:
-
-    docker compose up -d
-"""
-
 import os
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Load .env (if present) before reading environment variables.
-# python-dotenv is optional — the file is just a convenience for local dev.
-# ---------------------------------------------------------------------------
 
 def _load_dotenv() -> None:
     env_path = Path(__file__).resolve().parent / ".env"
@@ -30,30 +14,26 @@ def _load_dotenv() -> None:
             key, _, value = line.partition("=")
             os.environ.setdefault(key.strip(), value.strip())
 
+
 _load_dotenv()
 
-# ---------------------------------------------------------------------------
-# Database connection
-# Defaults match docker-compose.yml so `docker compose up` works out of the box.
-# ---------------------------------------------------------------------------
 
 def _require_env(key: str) -> str:
     value = os.environ.get(key)
     if not value:
-        raise RuntimeError(f"Required environment variable '{key}' is not set. Copy .env.example → .env and fill it in.")
+        raise RuntimeError(
+            f"Required environment variable '{key}' is not set. Copy .env.example → .env and fill it in."
+        )
     return value
 
-DB: dict = {
-    "host":     _require_env("CHEMBL_DB_HOST"),
-    "dbname":   _require_env("CHEMBL_DB_NAME"),
-    "user":     _require_env("CHEMBL_DB_USER"),
-    "password": _require_env("CHEMBL_DB_PASSWORD"),
-    "port":     int(_require_env("CHEMBL_DB_PORT")),
-}
 
-# ---------------------------------------------------------------------------
-# Directory paths  (all derived from ROOT_DIR)
-# ---------------------------------------------------------------------------
+DB: dict = {
+    "host": _require_env("CHEMBL_DB_HOST"),
+    "dbname": _require_env("CHEMBL_DB_NAME"),
+    "user": _require_env("CHEMBL_DB_USER"),
+    "password": _require_env("CHEMBL_DB_PASSWORD"),
+    "port": int(_require_env("CHEMBL_DB_PORT")),
+}
 
 ROOT_DIR: Path = Path(__file__).resolve().parent
 DATA_DIR: Path = ROOT_DIR / "data"
@@ -70,14 +50,9 @@ PATHS: dict = {
     "LOGS_DIR": DATA_DIR / "logs",
 }
 
-# Create directories on import so downstream code never has to mkdir manually.
 for _path in PATHS.values():
     if isinstance(_path, Path) and _path != PATHS["ROOT_DIR"]:
         _path.mkdir(parents=True, exist_ok=True)
-
-# ---------------------------------------------------------------------------
-# Extraction settings
-# ---------------------------------------------------------------------------
 
 EXTRACTION: dict = {
     "BATCH_SIZE": 300_000,
@@ -90,10 +65,6 @@ EXTRACTION: dict = {
     "VALID_VALIDITY_COMMENTS": (None, "Manually validated"),
 }
 
-# ---------------------------------------------------------------------------
-# Cleaning thresholds
-# ---------------------------------------------------------------------------
-
 CLEANING: dict = {
     "MIN_ATOMS": 5,
     "MAX_ATOMS": 100,
@@ -103,19 +74,11 @@ CLEANING: dict = {
     "MAX_PCHEMBL": 12.0,
 }
 
-# ---------------------------------------------------------------------------
-# Graph building
-# ---------------------------------------------------------------------------
-
 GRAPH: dict = {
-    "CHUNK_SIZE": 10_000,          # Data objects per .pt chunk file
-    "NUM_ATOM_FEATURES": 38,
-    "NUM_BOND_FEATURES": 6,
+    "CHUNK_SIZE": 10_000,
+    "NUM_ATOM_FEATURES": 31,
+    "NUM_BOND_FEATURES": 7,
 }
-
-# ---------------------------------------------------------------------------
-# Dataset splitting
-# ---------------------------------------------------------------------------
 
 SPLIT: dict = {
     "FRAC_TRAIN": 0.8,
@@ -124,19 +87,11 @@ SPLIT: dict = {
     "SEED": 42,
 }
 
-# ---------------------------------------------------------------------------
-# Fingerprint settings
-# ---------------------------------------------------------------------------
-
 FINGERPRINT: dict = {
     "RADIUS": 2,
     "N_BITS": 2048,
     "CHUNK_SIZE": 10_000,
 }
-
-# ---------------------------------------------------------------------------
-# Model training
-# ---------------------------------------------------------------------------
 
 TRAINING: dict = {
     "BATCH_SIZE": 512,

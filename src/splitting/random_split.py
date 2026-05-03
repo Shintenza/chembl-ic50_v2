@@ -18,23 +18,6 @@ def build_random_split_map(
     frac_val: float,
     seed: int,
 ) -> pd.DataFrame:
-    """
-    Build a random split map from cleaned parquet files.
-
-    Parameters
-    ----------
-    cleaned_dir:
-        Directory containing cleaned ``batch_*.parquet`` files.
-    frac_train, frac_val, frac_test:
-        Fractional sizes for each split (must sum to 1).
-    seed:
-        Random seed for reproducibility.
-
-    Returns
-    -------
-    pd.DataFrame
-        Columns: ``activity_id``, ``split``.
-    """
     cleaned_dir = Path(cleaned_dir)
     parquet_files = sorted(cleaned_dir.glob("batch_*.parquet"))
     if not parquet_files:

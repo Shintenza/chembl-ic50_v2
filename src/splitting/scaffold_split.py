@@ -85,26 +85,6 @@ def build_split_map(
     frac_val: float,
     seed: int,
 ) -> pd.DataFrame:
-    """Collect all cleaned molecules, run scaffold split, return a split map.
-
-    Uses ``activity_id`` (ChEMBL's primary key from the ``activities`` table)
-    as the stable join key.
-
-    Parameters
-    ----------
-    cleaned_dir:
-        Directory containing cleaned ``batch_*.parquet`` files.
-    frac_train, frac_val, frac_test:
-        Fractional sizes for each split (must sum to 1).
-    seed:
-        Random seed for scaffold-group shuffling.
-
-    Returns
-    -------
-    pd.DataFrame
-        Columns: ``activity_id``, ``split``.
-        ``split`` values are one of ``'train'``, ``'val'``, ``'test'``.
-    """
     cleaned_dir = Path(cleaned_dir)
     parquet_files = sorted(cleaned_dir.glob("batch_*.parquet"))
     if not parquet_files:

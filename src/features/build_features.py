@@ -32,7 +32,7 @@ def build_features(
     for parquet_path in tqdm(parquet_files, desc="Building features", unit="file"):
         df = pd.read_parquet(parquet_path, engine="pyarrow")
         for _, row in tqdm(df.iterrows(), total=len(df), leave=False, unit="mol"):
-            smiles = str(row["std_smiles"])
+            smiles = str(row["canonical_smiles"])
             pic50 = cast(float, row["pchembl_value"])
             activity_id = cast(int, row["activity_id"])
 
