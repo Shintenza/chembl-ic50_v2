@@ -79,7 +79,7 @@ def scaffold_split(
 
 
 @validate_splits
-def build_split_map(
+def build_scaffold_split_map(
     cleaned_dir: Path,
     frac_train: float,
     frac_val: float,

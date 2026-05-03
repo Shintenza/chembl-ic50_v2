@@ -14,7 +14,7 @@ def compute_metrics(preds: np.ndarray, labels: np.ndarray) -> dict:
     r2 = float(r2_score(labels, preds))
     mae = float(mean_absolute_error(labels, preds))
 
-    return {"rmse": rmse, "r2": r2, "mae": mae}
+    return {"rmse": rmse, "r2": r2, "mae": mae, "mse": mse}
 
 
 def format_metrics(metrics: dict) -> str:

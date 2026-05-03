@@ -96,7 +96,7 @@ FINGERPRINT: dict = {
 TRAINING: dict = {
     "BATCH_SIZE": 512,
     "LEARNING_RATE": 1e-3,
-    "WEIGHT_DECAY": 1e-5,
+    "WEIGHT_DECAY": 1e-4,
     "HIDDEN_DIM": 64,
     "HEAD_DIM": 32,
     "NUM_GCN_LAYERS": 3,

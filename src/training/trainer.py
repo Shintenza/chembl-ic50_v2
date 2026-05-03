@@ -1,3 +1,5 @@
+from sympy.physics.units import W
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import gc
 import logging
 from pathlib import Path
@@ -15,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 
 def resolve_device(device_override: str | None = None) -> torch.device:
-    """Return the target device, auto-detecting CUDA if no override is given."""
     if device_override is not None:
         return torch.device(device_override)
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -28,7 +29,6 @@ def train_epoch(
     loss_fn: nn.Module,
     device: torch.device,
 ) -> float:
-    """Run one full pass over *loader* and return the mean training loss."""
     model.train()
     total_loss: float = 0.0
     total_samples: int = 0
@@ -56,7 +56,6 @@ def evaluate(
     loader: DataLoader,
     device: torch.device,
 ) -> dict:
-    """Evaluate *model* on *loader* and return regression metrics."""
     model.eval()
     all_preds: list[np.ndarray] = []
     all_labels: list[np.ndarray] = []
@@ -82,6 +81,7 @@ def train(
     train_loader: DataLoader,
     val_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
+    lr_scheduler: ReduceLROnPlateau,
     loss_fn: nn.Module,
     device: torch.device,
     max_epochs: int,
@@ -105,11 +105,15 @@ def train(
         train_loss = train_epoch(model, train_loader, optimizer, loss_fn, device)
         val_metrics = evaluate(model, val_loader, device)
 
+        lr_scheduler.step(val_metrics["mse"])
+
         train_losses.append(train_loss)
         val_metrics_history.append(val_metrics)
 
         val_rmse = val_metrics["rmse"]
         improved = val_rmse < best_val_rmse
+
+        current_lr = optimizer.param_groups[0]['lr']
 
         if improved:
             best_val_rmse = val_rmse
@@ -122,10 +126,11 @@ def train(
             checkpoint_marker = ""
 
         logger.info(
-            "Epoch %03d | train_loss=%.4f | val %s%s",
+            "Epoch %03d | train_loss=%.4f | val %s | LR: %.6f %s",
             epoch + 1,
             train_loss,
             format_metrics(val_metrics),
+            current_lr,
             checkpoint_marker,
         )
 
@@ -153,38 +158,13 @@ def run_training(
     val_loader: DataLoader,
     test_loader: DataLoader,
     optimizer: torch.optim.Optimizer,
+    lr_scheduler: ReduceLROnPlateau,
     loss_fn: nn.Module,
     max_epochs: int,
     patience: int,
     model_save_path: Path,
     device: torch.device,
 ) -> dict:
-    """End-to-end training: runs the loop, then evaluates the best checkpoint on test.
-
-    Parameters
-    ----------
-    model:
-        Initialised :class:`~src.models.base.IC50Model`.
-    train_loader, val_loader, test_loader:
-        Pre-built DataLoaders.
-    optimizer:
-        Configured optimiser (e.g. ``torch.optim.Adam``).
-    loss_fn:
-        Loss function (e.g. ``nn.MSELoss()``).
-    max_epochs:
-        Hard upper bound on training epochs.
-    patience:
-        Early-stopping patience (epochs without val-RMSE improvement).
-    model_save_path:
-        Path at which to save and later reload the best checkpoint.
-    device:
-        Target device.
-
-    Returns
-    -------
-    dict
-        Test-set metrics (``rmse``, ``r2``, ``mae``) plus a ``history`` sub-dict.
-    """
     logger.info("Training on device: %s", device)
 
     history = train(
@@ -192,6 +172,7 @@ def run_training(
         train_loader=train_loader,
         val_loader=val_loader,
         optimizer=optimizer,
+        lr_scheduler=lr_scheduler,
         loss_fn=loss_fn,
         device=device,
         max_epochs=max_epochs,

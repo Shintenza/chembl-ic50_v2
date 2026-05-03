@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import config
 from src.enums import Split, SplitStrategy
-from src.splitting import build_split_map, build_random_split_map
+from src.splitting import build_scaffold_split_map, build_random_split_map
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,7 +94,7 @@ def main() -> None:
     logger.info("Seed            : %d", args.seed)
 
     if args.split == SplitStrategy.SCAFFOLD:
-        split_df = build_split_map(
+        split_df = build_scaffold_split_map(
             cleaned_dir=cleaned_dir,
             frac_train=args.frac_train,
             frac_val=args.frac_val,
