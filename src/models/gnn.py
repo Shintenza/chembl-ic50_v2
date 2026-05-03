@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GINEConv, global_mean_pool, global_max_pool
 from typing import cast
-
+from config import GRAPH
 
 class GNN(IC50Model):
     def __init__(
@@ -67,9 +67,9 @@ class GNN(IC50Model):
         return b, b.y.squeeze(-1)
 
 
-def build_model(config: dict) -> IC50Model:
-    node_in_dim = cast(int, config.get("NUM_ATOM_FEATURES"))
-    edge_in_dim = cast(int, config.get("NUM_BOND_FEATURES"))
+def build_model() -> IC50Model:
+    node_in_dim = cast(int, GRAPH.get("NUM_ATOM_FEATURES"))
+    edge_in_dim = cast(int, GRAPH.get("NUM_BOND_FEATURES"))
 
     return GNN(
         node_in_dim,

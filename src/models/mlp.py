@@ -9,6 +9,8 @@ from torch import Tensor
 from .base import IC50Model
 
 
+from config import MLP_TRAINING, FINGERPRINT
+
 class MLPModel(IC50Model):
     def __init__(self, in_dim: int, hidden_dims: list[int], dropout: float) -> None:
         super().__init__()
@@ -31,9 +33,9 @@ class MLPModel(IC50Model):
         return x.to(device), y.to(device)
 
 
-def build_mlp(training_cfg: dict, fingerprint_cfg: dict) -> MLPModel:
+def build_mlp() -> MLPModel:
     return MLPModel(
-        in_dim=fingerprint_cfg["N_BITS"],
-        hidden_dims=training_cfg["HIDDEN_DIMS"],
-        dropout=training_cfg["DROPOUT"],
+        in_dim=FINGERPRINT["N_BITS"],
+        hidden_dims=MLP_TRAINING["HIDDEN_DIMS"],
+        dropout=MLP_TRAINING["DROPOUT"],
     )

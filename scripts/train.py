@@ -129,9 +129,7 @@ def main() -> None:
                 f"No graph chunks found in {chunks_dir}\n"
                 "Run 04_build_features.py --features graphs first."
             )
-        model = build_model(
-            config.GRAPH,
-        )
+        model = build_model()
         train_cfg = config.TRAINING
         train_loader, val_loader, test_loader = create_graph_dataloaders(
             chunks_dir=chunks_dir,
@@ -147,10 +145,7 @@ def main() -> None:
                 f"No fingerprint chunks found in {chunks_dir}\n"
                 "Run 04_build_features.py --features fingerprints first."
             )
-        model = build_mlp(
-            training_cfg=config.MLP_TRAINING,
-            fingerprint_cfg=config.FINGERPRINT,
-        )
+        model = build_mlp()
         train_cfg = config.MLP_TRAINING
         train_loader, val_loader, test_loader = create_fp_dataloaders(
             chunks_dir=chunks_dir,

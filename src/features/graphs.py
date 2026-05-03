@@ -2,6 +2,11 @@ import torch
 from rdkit import Chem
 from torch_geometric.data import Data
 
+BOND_TYPES = ["SINGLE", "DOUBLE", "TRIPLE", "AROMATIC", "OTHER"]
+ATOMS = ["C", "N", "O", "S", "F", "P", "Cl", "Br", "I", "Unknown"]
+DEGREE = [0, 1, 2, 3, 4, "MoreThan4"]
+HYBRIDIZATION = ["SP", "SP2", "SP3", "SP3D", "SP3D2", "OTHER"]
+NUMBER_OF_HS = [0, 1, 2, 3, 4, "MoreThan4"]
 
 def one_hot_encoding(x, permitted_list):
     if x not in permitted_list:
@@ -16,17 +21,17 @@ def one_hot_encoding(x, permitted_list):
 def get_node_features(atom):
     atom_type = atom.GetSymbol()
     atom_type_enc = one_hot_encoding(
-        atom_type, ["C", "N", "O", "S", "F", "P", "Cl", "Br", "I", "Unknown"]
+        atom_type, ATOMS
     )
 
-    degree_enc = one_hot_encoding(atom.GetTotalDegree(), [0, 1, 2, 3, 4, "MoreThan4"])
+    degree_enc = one_hot_encoding(atom.GetTotalDegree(), DEGREE)
 
     hybridization_enc = one_hot_encoding(
-        str(atom.GetHybridization()), ["SP", "SP2", "SP3", "SP3D", "SP3D2", "OTHER"]
+        str(atom.GetHybridization()), HYBRIDIZATION 
     )
 
     num_implicit_h_enc = one_hot_encoding(
-        atom.GetTotalNumHs(), [0, 1, 2, 3, 4, "MoreThan4"]
+        atom.GetTotalNumHs(), NUMBER_OF_HS
     )
 
     is_aromatic = [int(atom.GetIsAromatic())]
@@ -45,16 +50,11 @@ def get_node_features(atom):
 
 
 def get_edge_features(bond):
-    """
-    Reprezentacja wiązania (krawędzi).
-    """
-    # 1. Typ wiązania
     bond_type = str(bond.GetBondType())
     bond_type_enc = one_hot_encoding(
-        bond_type, ["SINGLE", "DOUBLE", "TRIPLE", "AROMATIC", "OTHER"]
+        bond_type, BOND_TYPES 
     )
 
-    # 2. Cechy binarne
     is_conjugated = [int(bond.GetIsConjugated())]
     is_in_ring = [int(bond.IsInRing())]
 
@@ -63,8 +63,6 @@ def get_edge_features(bond):
 
 def smiles_to_graph(smiles: str, pic50: float, id: int):
     mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
 
     node_features = []
     for atom in mol.GetAtoms():
