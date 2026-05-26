@@ -29,40 +29,36 @@ def _load_model(model_path: str):
 
 
 @tool
-def predict_ic50(smiles: str) -> str:
-    """Predict the numerical IC50 / pIC50 biological activity value for a molecule. Use ONLY when the user explicitly asks to predict, estimate, or calculate IC50 or activity. Input must be a SMILES string."""
-    selected_model = st.session_state.get("selected_pt_model")
-    if not selected_model:
-        return "No model selected. Please choose a model from the sidebar."
+def predict_ic50(smiles: str) -> float:
+    """Predict the pIC50 value for a molecule. Use when the user asks to predict, estimate, or calculate IC50 or biological activity. Returns a numerical pIC50 score."""
+    model_path = st.session_state.get("selected_pt_model")
+    if not model_path:
+        raise RuntimeError("No model selected.")
 
-    model = _load_model(selected_model)
+    if Chem.MolFromSmiles(smiles) is None:
+        raise ValueError(f"Invalid SMILES: {smiles}")
+
+    model = _load_model(model_path)
     device = torch.device("cpu")
 
-    if _is_gnn(selected_model):
+    if _is_gnn(model_path):
         graph = smiles_to_graph_input(smiles)
-        if graph is None:
-            return f"Invalid SMILES string: {smiles}"
-        batch = Batch.from_data_list([graph]).to(device)
         with torch.no_grad():
-            pred = model(batch)
+            pred = model(Batch.from_data_list([graph]).to(device))
     else:
         fp = smiles_to_fingerprint(smiles)
-        if fp is None:
-            return f"Invalid SMILES string: {smiles}"
         with torch.no_grad():
             pred = model(fp.unsqueeze(0).to(device))
 
-    pic50 = pred.item()
-    ic50_nm = 10 ** (9 - pic50)
-    return f"Predicted pIC50: {pic50:.3f} (IC50 ≈ {ic50_nm:.2f} nM)"
+    return pred.item()
 
 
 @tool
 def draw_molecule(smiles: str) -> str:
-    """Render and display a 2D structural image of a molecule. Use ONLY when the user asks to draw, show, visualize, or display the molecule structure. Do NOT use this for IC50 prediction. Input must be a SMILES string."""
+    """Render a 2D structural image of a molecule. Use when the user asks to draw, show, visualize, or display the structure. Do NOT use for IC50 prediction."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        return f"Invalid SMILES string: {smiles}"
+        raise ValueError(f"Invalid SMILES: {smiles}")
 
     st.session_state["pending_image"] = Draw.MolToImage(mol, size=(400, 300))
-    return f"2D structure of {smiles} has been drawn."
+    return "Molecule rendered."

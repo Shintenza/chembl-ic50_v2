@@ -21,35 +21,29 @@ with st.sidebar:
 
     if not available_models:
         st.warning("No models found in data/models/")
-        st.session_state.selected_pt_model = None
     else:
-        selected = st.selectbox(
+        st.selectbox(
             "Choose model:",
             options=available_models,
             format_func=lambda p: Path(p).stem,
+            key="selected_pt_model",
         )
-        st.session_state.selected_pt_model = selected
-        st.info(f"Active: **{Path(selected).stem}**")
+        st.info(f"Active: **{Path(st.session_state.selected_pt_model).stem}**")
 
-LLM_MODEL = "llama3.2"
-llm = ChatOllama(model=LLM_MODEL, temperature=0)
-
-tools = [predict_ic50, draw_molecule]
+@st.cache_resource
+def get_agent():
+    llm = ChatOllama(model="llama3.2", temperature=0)
+    return create_agent(llm, [predict_ic50, draw_molecule])
 
 SYSTEM_PROMPT = (
-    "You are an expert chemoinformatics AI assistant with two tools: predict_ic50 and draw_molecule. "
-    "Tool selection rules — follow these exactly: "
-    "- Use predict_ic50 ONLY when the user asks to predict, estimate, or calculate IC50 or biological activity. "
-    "- Use draw_molecule ONLY when the user asks to draw, show, visualize, or display a molecule structure. "
-    "- NEVER call predict_ic50 in response to a draw/show/visualize request. "
-    "- NEVER call draw_molecule in response to a predict/estimate/calculate request. "
-    "After a successful IC50 prediction, ask the user if they would like to see the 2D structure."
+    "You are a chemoinformatics assistant. You have two tools: predict_ic50 and draw_molecule. "
+    "Use predict_ic50 when the user wants to know the IC50 or biological activity of a molecule. "
+    "Use draw_molecule when the user wants to see the 2D structure of a molecule. "
+    "predict_ic50 returns a pIC50 value. Present it as pIC50 and also convert to IC50 in nM using IC50 = 10^(9 - pIC50). "
+    "After predicting IC50, ask if the user would like to see the 2D structure."
 )
 
-agent = create_react_agent(llm, tools)
-
 st.title("Chemoinformatics AI Agent")
-st.markdown("Enter a SMILES string to predict its IC50 biological activity.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -60,29 +54,33 @@ for msg in st.session_state.messages:
         if "image" in msg:
             st.image(msg["image"])
 
-if user_input := st.chat_input("Enter SMILES (e.g., CCO) or chat with the agent..."):
+if user_input := st.chat_input("Enter SMILES or ask a question..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.markdown(user_input)
 
     with st.chat_message("assistant"):
-        with st.spinner("Agent is thinking..."):
-            try:
-                response = agent.invoke(
-                    {"messages": [("system", SYSTEM_PROMPT), ("human", user_input)]}
-                )
+        with st.spinner("Thinking..."):
+            selected_model = st.session_state.get("selected_pt_model")
+            if not selected_model:
+                st.error("Please select a model from the sidebar first.")
+            else:
+                try:
+                    agent = get_agent()
+                    response = agent.invoke(
+                        {"messages": [("system", SYSTEM_PROMPT), ("human", user_input)]}
+                    )
+                    output = response["messages"][-1].content
+                    st.markdown(output)
 
-                output = response["messages"][-1].content
-                st.markdown(output)
+                    msg_data = {"role": "assistant", "content": output}
 
-                msg_data = {"role": "assistant", "content": output}
+                    pending = st.session_state.pop("pending_image", None)
+                    if pending is not None:
+                        st.image(pending)
+                        msg_data["image"] = pending
 
-                pending = st.session_state.pop("pending_image", None)
-                if pending is not None:
-                    st.image(pending)
-                    msg_data["image"] = pending
+                    st.session_state.messages.append(msg_data)
 
-                st.session_state.messages.append(msg_data)
-
-            except Exception as e:
-                st.error(f"Agent encountered an error: {str(e)}")
+                except Exception as e:
+                    st.error(f"Error: {e}")
