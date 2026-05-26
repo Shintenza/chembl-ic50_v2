@@ -2,8 +2,7 @@ from pathlib import Path
 
 import streamlit as st
 from langchain_ollama import ChatOllama
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate
+from langgraph.prebuilt import create_react_agent
 
 import config
 from frontend.agent.tools import predict_ic50, draw_molecule
@@ -33,24 +32,17 @@ LLM_MODEL = "llama3.2"
 llm = ChatOllama(model=LLM_MODEL, temperature=0)
 
 tools = [predict_ic50, draw_molecule]
-prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            "You are an expert chemoinformatics AI assistant. "
-            "You help users predict IC50 values and visualize molecules using provided tools. "
-            "Rules: "
-            "1. When a user provides a SMILES string and asks for IC50, use the predict_ic50 tool. "
-            "2. After successfully predicting IC50, ALWAYS politely ask the user if they would like to see the 2D structure of the molecule. "
-            "3. If the user asks to draw or see the molecule, use the draw_molecule tool.",
-        ),
-        ("human", "{input}"),
-        ("placeholder", "{agent_scratchpad}"),
-    ]
+
+SYSTEM_PROMPT = (
+    "You are an expert chemoinformatics AI assistant. "
+    "You help users predict IC50 values and visualize molecules using provided tools. "
+    "Rules: "
+    "1. When a user provides a SMILES string and asks for IC50, use the predict_ic50 tool. "
+    "2. After successfully predicting IC50, ALWAYS politely ask the user if they would like to see the 2D structure of the molecule. "
+    "3. If the user asks to draw or see the molecule, use the draw_molecule tool."
 )
 
-agent = create_tool_calling_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+agent = create_react_agent(llm, tools, state_modifier=SYSTEM_PROMPT)
 
 st.title("Chemoinformatics AI Agent")
 st.markdown("Enter a SMILES string to predict its IC50 biological activity.")
@@ -72,8 +64,8 @@ if user_input := st.chat_input("Enter SMILES (e.g., CCO) or chat with the agent.
     with st.chat_message("assistant"):
         with st.spinner("Agent is thinking..."):
             try:
-                response = agent_executor.invoke({"input": user_input})
-                output = response["output"]
+                response = agent.invoke({"messages": [("human", user_input)]})
+                output = response["messages"][-1].content
                 st.markdown(output)
 
                 msg_data = {"role": "assistant", "content": output}
