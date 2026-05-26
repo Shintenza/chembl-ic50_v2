@@ -1,8 +1,10 @@
 from rdkit.Chem.AllChem import FingerprintGenerator64
+
 from rdkit import Chem
 import numpy as np
 
 from torch import from_numpy, tensor, float32, long
+
 
 def smiles_to_morgan(
     generator: FingerprintGenerator64, smiles: str

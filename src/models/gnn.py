@@ -7,6 +7,7 @@ from torch_geometric.nn import GINEConv, global_mean_pool, global_max_pool
 from typing import cast
 from config import GRAPH
 
+
 class GNN(IC50Model):
     def __init__(
         self,
@@ -14,7 +15,7 @@ class GNN(IC50Model):
         edge_in_dim: int,
         hidden_dim: int = 64,
         num_layers: int = 3,
-        dropout_rate: float = 0.3,  # <-- DODANE: Parametr do sterowania siłą dropoutu
+        dropout_rate: float = 0.3,
     ):
         super().__init__()
         self.node_emb = nn.Linear(node_in_dim, hidden_dim)
@@ -33,7 +34,6 @@ class GNN(IC50Model):
             self.convs.append(GINEConv(nn=mlp, train_eps=True))
             self.bns.append(nn.BatchNorm1d(hidden_dim))
 
-        # <-- DODANE: Inicjalizacja warstwy Dropout
         self.dropout = nn.Dropout(p=dropout_rate)
 
         self.lin1 = nn.Linear(hidden_dim * 2, hidden_dim)
@@ -59,12 +59,9 @@ class GNN(IC50Model):
         x_max = global_max_pool(x, batch)
         x_pool = torch.cat([x_mean, x_max], dim=1)
 
-        # <-- DODANE: Dropout na zgrupowanym wektorze z całego grafu
         x_pool = self.dropout(x_pool)
-
         x_out = F.relu(self.lin1(x_pool))
-        
-        # <-- DODANE: Drugi Dropout przed ostateczną predykcją (mocno ogranicza zapamiętywanie)
+
         x_out = self.dropout(x_out)
 
         x_out = self.lin2(x_out)

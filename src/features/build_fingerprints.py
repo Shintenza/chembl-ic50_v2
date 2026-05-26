@@ -1,12 +1,11 @@
-from src.features.fingerprints import prepare_tensor
 from functools import partial
 import logging
 from pathlib import Path
 from rdkit.Chem import rdFingerprintGenerator
 from .build_features import build_features
+from src.features.fingerprints import prepare_tensor
 
 logger = logging.getLogger(__name__)
-
 
 
 def build_fingerprints(

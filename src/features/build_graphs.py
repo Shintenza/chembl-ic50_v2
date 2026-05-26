@@ -1,6 +1,6 @@
-from .graphs import smiles_to_graph
-
 from pathlib import Path
+
+from .graphs import smiles_to_graph
 from .build_features import build_features
 
 

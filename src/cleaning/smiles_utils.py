@@ -34,7 +34,7 @@ def standardize_smiles(smiles: str) -> str | None:
         if mol is None:
             return None
 
-        canonical = Chem.MolToSmiles(mol, canonical=True)
+        canonical = Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True)
         if not canonical:
             return None
 

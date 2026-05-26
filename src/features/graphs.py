@@ -8,6 +8,7 @@ DEGREE = [0, 1, 2, 3, 4, "MoreThan4"]
 HYBRIDIZATION = ["SP", "SP2", "SP3", "SP3D", "SP3D2", "OTHER"]
 NUMBER_OF_HS = [0, 1, 2, 3, 4, "MoreThan4"]
 
+
 def one_hot_encoding(x, permitted_list):
     if x not in permitted_list:
         x = permitted_list[-1]
@@ -20,19 +21,13 @@ def one_hot_encoding(x, permitted_list):
 
 def get_node_features(atom):
     atom_type = atom.GetSymbol()
-    atom_type_enc = one_hot_encoding(
-        atom_type, ATOMS
-    )
+    atom_type_enc = one_hot_encoding(atom_type, ATOMS)
 
     degree_enc = one_hot_encoding(atom.GetTotalDegree(), DEGREE)
 
-    hybridization_enc = one_hot_encoding(
-        str(atom.GetHybridization()), HYBRIDIZATION 
-    )
+    hybridization_enc = one_hot_encoding(str(atom.GetHybridization()), HYBRIDIZATION)
 
-    num_implicit_h_enc = one_hot_encoding(
-        atom.GetTotalNumHs(), NUMBER_OF_HS
-    )
+    num_implicit_h_enc = one_hot_encoding(atom.GetTotalNumHs(), NUMBER_OF_HS)
 
     is_aromatic = [int(atom.GetIsAromatic())]
     is_in_ring = [int(atom.IsInRing())]
@@ -51,9 +46,7 @@ def get_node_features(atom):
 
 def get_edge_features(bond):
     bond_type = str(bond.GetBondType())
-    bond_type_enc = one_hot_encoding(
-        bond_type, BOND_TYPES 
-    )
+    bond_type_enc = one_hot_encoding(bond_type, BOND_TYPES)
 
     is_conjugated = [int(bond.GetIsConjugated())]
     is_in_ring = [int(bond.IsInRing())]

@@ -84,7 +84,7 @@ SPLIT: dict = {
     "FRAC_TRAIN": 0.8,
     "FRAC_VAL": 0.1,
     "FRAC_TEST": 0.1,
-    "SEED": 42,
+    "SEED": 30,
 }
 
 FINGERPRINT: dict = {
@@ -102,6 +102,8 @@ TRAINING: dict = {
     "NUM_GCN_LAYERS": 3,
     "MAX_EPOCHS": 200,
     "PATIENCE": 15,
+    "LEARNING_RATE_PATIENCE": 8,
+    "LEARNING_RATE_REDUCE_FACTOR": 0.5,
     "EVAL_BATCH_SIZE": 1024,
     "NUM_WORKERS": 4,
 }
@@ -112,6 +114,8 @@ MLP_TRAINING: dict = {
     "BATCH_SIZE": 512,
     "EVAL_BATCH_SIZE": 1024,
     "LEARNING_RATE": 1e-3,
+    "LEARNING_RATE_PATIENCE": 8,
+    "LEARNING_RATE_REDUCE_FACTOR": 0.5,
     "WEIGHT_DECAY": 1e-5,
     "MAX_EPOCHS": 200,
     "PATIENCE": 15,

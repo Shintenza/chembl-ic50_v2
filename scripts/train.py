@@ -9,6 +9,7 @@ Usage
     python scripts/05_train.py --model gcn --loss mae --split random
     python scripts/05_train.py --model mlp --loss mse --split scaffold --run-name mlp_scaffold_01
 """
+
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 import argparse
@@ -170,8 +171,8 @@ def main() -> None:
     scheduler = ReduceLROnPlateau(
         optimizer,
         mode="min",
-        factor=0.5,
-        patience=3,
+        factor=train_cfg["LEARNING_RATE_REDUCE_FACTOR"],
+        patience=train_cfg["LEARNING_RATE_PATIENCE"],
     )
 
     results = run_training(

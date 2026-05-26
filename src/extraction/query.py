@@ -28,6 +28,7 @@ def build_extraction_query(offset: int, batch_size: int) -> str:
         act.standard_type     = 'IC50'
         AND act.standard_units    = 'nM'
         AND act.standard_relation = '='
+        AND a.assay_type = 'B'
         AND act.pchembl_value     IS NOT NULL
         AND act.standard_value    > 0
         AND act.potential_duplicate = 0
