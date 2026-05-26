@@ -8,6 +8,7 @@ from torch_geometric.data import Batch
 from rdkit import Chem
 from rdkit.Chem import Draw
 from langchain_core.tools import tool
+from langchain_core.runnables import RunnableConfig
 import streamlit as st
 
 from src.features.graphs import smiles_to_graph_input
@@ -29,9 +30,9 @@ def _load_model(model_path: str):
 
 
 @tool
-def predict_ic50(smiles: str) -> float:
+def predict_ic50(smiles: str, config: RunnableConfig) -> float:
     """Predict the pIC50 value for a molecule. Use when the user asks to predict, estimate, or calculate IC50 or biological activity. Returns a numerical pIC50 score."""
-    model_path = st.session_state.get("selected_pt_model")
+    model_path = config.get("configurable", {}).get("model_path")
     if not model_path:
         raise RuntimeError("No model selected.")
 

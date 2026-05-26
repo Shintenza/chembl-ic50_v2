@@ -68,7 +68,8 @@ if user_input := st.chat_input("Enter SMILES or ask a question..."):
                 try:
                     agent = get_agent()
                     response = agent.invoke(
-                        {"messages": [("system", SYSTEM_PROMPT), ("human", user_input)]}
+                        {"messages": [("system", SYSTEM_PROMPT), ("human", user_input)]},
+                        config={"configurable": {"model_path": selected_model}},
                     )
                     output = response["messages"][-1].content
                     st.markdown(output)
