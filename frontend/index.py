@@ -37,15 +37,16 @@ llm = ChatOllama(model=LLM_MODEL, temperature=0)
 tools = [predict_ic50, draw_molecule]
 
 SYSTEM_PROMPT = (
-    "You are an expert chemoinformatics AI assistant. "
-    "You help users predict IC50 values and visualize molecules using provided tools. "
-    "Rules: "
-    "1. When a user provides a SMILES string and asks for IC50, use the predict_ic50 tool. "
-    "2. After successfully predicting IC50, ALWAYS politely ask the user if they would like to see the 2D structure of the molecule. "
-    "3. If the user asks to draw or see the molecule, use the draw_molecule tool."
+    "You are an expert chemoinformatics AI assistant with two tools: predict_ic50 and draw_molecule. "
+    "Tool selection rules — follow these exactly: "
+    "- Use predict_ic50 ONLY when the user asks to predict, estimate, or calculate IC50 or biological activity. "
+    "- Use draw_molecule ONLY when the user asks to draw, show, visualize, or display a molecule structure. "
+    "- NEVER call predict_ic50 in response to a draw/show/visualize request. "
+    "- NEVER call draw_molecule in response to a predict/estimate/calculate request. "
+    "After a successful IC50 prediction, ask the user if they would like to see the 2D structure."
 )
 
-agent = create_agent(llm, tools)
+agent = create_react_agent(llm, tools)
 
 st.title("Chemoinformatics AI Agent")
 st.markdown("Enter a SMILES string to predict its IC50 biological activity.")

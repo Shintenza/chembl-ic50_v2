@@ -30,7 +30,7 @@ def _load_model(model_path: str):
 
 @tool
 def predict_ic50(smiles: str) -> str:
-    """Use this tool to predict the biological activity (IC50) for a molecule given its SMILES string."""
+    """Predict the numerical IC50 / pIC50 biological activity value for a molecule. Use ONLY when the user explicitly asks to predict, estimate, or calculate IC50 or activity. Input must be a SMILES string."""
     selected_model = st.session_state.get("selected_pt_model")
     if not selected_model:
         return "No model selected. Please choose a model from the sidebar."
@@ -59,7 +59,7 @@ def predict_ic50(smiles: str) -> str:
 
 @tool
 def draw_molecule(smiles: str) -> str:
-    """Use this tool to draw a 2D structure of a molecule from its SMILES string."""
+    """Render and display a 2D structural image of a molecule. Use ONLY when the user asks to draw, show, visualize, or display the molecule structure. Do NOT use this for IC50 prediction. Input must be a SMILES string."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return f"Invalid SMILES string: {smiles}"
