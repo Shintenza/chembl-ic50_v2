@@ -1,31 +1,34 @@
+from pathlib import Path
+
 import streamlit as st
-import os
-import glob
 from langchain_ollama import ChatOllama
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate
 
+import config
+from frontend.agent.tools import predict_ic50, draw_molecule
+
 st.set_page_config(page_title="IC50 Agent", page_icon="🧪")
 
-# --- Sidebar: Dropdown z wyborem modelu ---
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("Settings")
 
-    # Automatycznie szuka wszystkich plików .pt w folderze z projektem
-    available_models = glob.glob("*.pt")
+    models_dir = config.PATHS["MODELS_DIR"]
+    model_files = sorted(models_dir.glob("*.pt")) if models_dir.exists() else []
+    available_models = [str(p) for p in model_files]
 
-    # Jeśli nie ma modeli w folderze, dajemy zaślepkę
     if not available_models:
-        available_models = ["moj_model.pt"]
+        st.warning("No models found in data/models/")
+        st.session_state.selected_pt_model = None
+    else:
+        selected = st.selectbox(
+            "Choose model:",
+            options=available_models,
+            format_func=lambda p: Path(p).stem,
+        )
+        st.session_state.selected_pt_model = selected
+        st.info(f"Active: **{Path(selected).stem}**")
 
-    # Tworzymy dropdown. Zapisujemy wynik do st.session_state.selected_pt_model
-    st.session_state.selected_pt_model = st.selectbox(
-        "Choose PyTorch Model:", options=available_models
-    )
-
-    st.info(f"Currently active model: **{st.session_state.selected_pt_model}**")
-
-# --- Reszta konfiguracji Agenta (bez zmian) ---
 LLM_MODEL = "llama3.2"
 llm = ChatOllama(model=LLM_MODEL, temperature=0)
 
@@ -49,8 +52,7 @@ prompt = ChatPromptTemplate.from_messages(
 agent = create_tool_calling_agent(llm, tools, prompt)
 agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
 
-# --- Główny interfejs UI ---
-st.title("🧪 Chemoinformatics AI Agent")
+st.title("Chemoinformatics AI Agent")
 st.markdown("Enter a SMILES string to predict its IC50 biological activity.")
 
 if "messages" not in st.session_state:
@@ -59,7 +61,7 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        if "image" in msg and os.path.exists(msg["image"]):
+        if "image" in msg:
             st.image(msg["image"])
 
 if user_input := st.chat_input("Enter SMILES (e.g., CCO) or chat with the agent..."):
@@ -76,14 +78,10 @@ if user_input := st.chat_input("Enter SMILES (e.g., CCO) or chat with the agent.
 
                 msg_data = {"role": "assistant", "content": output}
 
-                image_path = "molecule.png"
-                if os.path.exists(image_path):
-                    st.image(image_path)
-                    import time
-
-                    new_image_path = f"molecule_{int(time.time())}.png"
-                    os.rename(image_path, new_image_path)
-                    msg_data["image"] = new_image_path
+                pending = st.session_state.pop("pending_image", None)
+                if pending is not None:
+                    st.image(pending)
+                    msg_data["image"] = pending
 
                 st.session_state.messages.append(msg_data)
 

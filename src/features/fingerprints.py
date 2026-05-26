@@ -1,9 +1,23 @@
+from functools import lru_cache
+
 from rdkit.Chem.AllChem import FingerprintGenerator64
 
 from rdkit import Chem
 import numpy as np
 
+import torch
 from torch import from_numpy, tensor, float32, long
+
+
+@lru_cache(maxsize=1)
+def _default_generator() -> FingerprintGenerator64:
+    from rdkit.Chem import rdFingerprintGenerator
+    from config import FINGERPRINT
+
+    return rdFingerprintGenerator.GetMorganGenerator(
+        radius=FINGERPRINT["RADIUS"],
+        fpSize=FINGERPRINT["N_BITS"],
+    )
 
 
 def smiles_to_morgan(
@@ -12,6 +26,14 @@ def smiles_to_morgan(
     mol = Chem.MolFromSmiles(smiles)
     fp = generator.GetFingerprint(mol)
     return np.array(fp, dtype=np.float32)
+
+
+def smiles_to_fingerprint(smiles: str) -> torch.Tensor | None:
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    fp = _default_generator().GetFingerprint(mol)
+    return from_numpy(np.array(fp, dtype=np.float32))
 
 
 def prepare_tensor(

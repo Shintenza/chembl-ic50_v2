@@ -54,8 +54,10 @@ def get_edge_features(bond):
     return bond_type_enc + is_conjugated + is_in_ring
 
 
-def smiles_to_graph(smiles: str, pic50: float, id: int):
+def smiles_to_graph_input(smiles: str) -> Data | None:
     mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
 
     node_features = []
     for atom in mol.GetAtoms():
@@ -80,9 +82,15 @@ def smiles_to_graph(smiles: str, pic50: float, id: int):
     edge_index = torch.tensor(edges_list, dtype=torch.long).t().contiguous()
     edge_attr = torch.tensor(edge_features_list, dtype=torch.float)
 
-    y = torch.tensor([[pic50]], dtype=torch.float)
+    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr)
 
-    data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
+
+def smiles_to_graph(smiles: str, pic50: float, id: int) -> Data | None:
+    data = smiles_to_graph_input(smiles)
+    if data is None:
+        return None
+
+    data.y = torch.tensor([[pic50]], dtype=torch.float)
     data.activity_id = id
 
     return data
