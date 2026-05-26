@@ -1,8 +1,11 @@
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 from langchain_ollama import ChatOllama
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 
 import config
 from frontend.agent.tools import predict_ic50, draw_molecule
@@ -42,7 +45,7 @@ SYSTEM_PROMPT = (
     "3. If the user asks to draw or see the molecule, use the draw_molecule tool."
 )
 
-agent = create_react_agent(llm, tools, state_modifier=SYSTEM_PROMPT)
+agent = create_agent(llm, tools)
 
 st.title("Chemoinformatics AI Agent")
 st.markdown("Enter a SMILES string to predict its IC50 biological activity.")
@@ -64,7 +67,10 @@ if user_input := st.chat_input("Enter SMILES (e.g., CCO) or chat with the agent.
     with st.chat_message("assistant"):
         with st.spinner("Agent is thinking..."):
             try:
-                response = agent.invoke({"messages": [("human", user_input)]})
+                response = agent.invoke(
+                    {"messages": [("system", SYSTEM_PROMPT), ("human", user_input)]}
+                )
+
                 output = response["messages"][-1].content
                 st.markdown(output)
 
