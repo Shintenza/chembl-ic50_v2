@@ -20,9 +20,7 @@ def _default_generator() -> FingerprintGenerator64:
     )
 
 
-def smiles_to_morgan(
-    generator: FingerprintGenerator64, smiles: str
-) -> np.ndarray | None:
+def smiles_to_morgan(generator: FingerprintGenerator64, smiles: str) -> np.ndarray:
     mol = Chem.MolFromSmiles(smiles)
     fp = generator.GetFingerprint(mol)
     return np.array(fp, dtype=np.float32)

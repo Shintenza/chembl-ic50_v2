@@ -16,50 +16,67 @@ from src.features.fingerprints import smiles_to_fingerprint
 from src.models import build_model, build_mlp
 
 
-def _is_gnn(model_path: str) -> bool:
+def is_gnn(model_path: str) -> bool:
     name = Path(model_path).stem.lower()
-    return "gnn" in name or "gine" in name or "graph" in name
+    return "gnn" in name
 
 
 @st.cache_resource
-def _load_model(model_path: str):
-    model = build_model() if _is_gnn(model_path) else build_mlp()
+def load_model(model_path: str):
+    model = build_model() if is_gnn(model_path) else build_mlp()
     model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
     model.eval()
     return model
 
 
 @tool
-def predict_ic50(smiles: str, config: RunnableConfig) -> float:
-    """Predict the pIC50 value for a molecule. Use when the user asks to predict, estimate, or calculate IC50 or biological activity. Returns a numerical pIC50 score."""
-    model_path = config.get("configurable", {}).get("model_path")
+def predict_ic50(smiles: str, config: RunnableConfig) -> str:
+    """
+    CALL THIS TOOL IMMEDIATELY IF THE USER WANTS TO PREDICT IC50 OR ACTIVITY.
+    INPUT MUST BE A SMILES STRING.
+    """
+    print("I WAS CALLED WITH SMILES: ", smiles)
+    model_path = config.get("configurable", {}).get("selected_model")
+
     if not model_path:
-        raise RuntimeError("No model selected.")
+        return "Error: No model selected. Tell the user to select a model from the sidebar."
 
-    if Chem.MolFromSmiles(smiles) is None:
-        raise ValueError(f"Invalid SMILES: {smiles}")
+    try:
+        model = load_model(model_path)
+        device = torch.device("cpu")
 
-    model = _load_model(model_path)
-    device = torch.device("cpu")
+        if is_gnn(model_path):
+            graph = smiles_to_graph_input(smiles)
+            with torch.no_grad():
+                pred = model(Batch.from_data_list([graph]).to(device))
+        else:
+            fp = smiles_to_fingerprint(smiles)
+            with torch.no_grad():
+                pred = model(fp.unsqueeze(0).to(device))
+        pic50 = pred.item()
+        ic50_nm = 10 ** (9 - pic50)
+        return f"Predicted pIC50 is {pic50:.2f}, which equals {ic50_nm:.2f} nM."
 
-    if _is_gnn(model_path):
-        graph = smiles_to_graph_input(smiles)
-        with torch.no_grad():
-            pred = model(Batch.from_data_list([graph]).to(device))
-    else:
-        fp = smiles_to_fingerprint(smiles)
-        with torch.no_grad():
-            pred = model(fp.unsqueeze(0).to(device))
-
-    return pred.item()
+    except Exception as e:
+        return f"Error during model inference: {str(e)}"
 
 
 @tool
-def draw_molecule(smiles: str) -> str:
-    """Render a 2D structural image of a molecule. Use when the user asks to draw, show, visualize, or display the structure. Do NOT use for IC50 prediction."""
+def draw_molecule(smiles: str, config: RunnableConfig) -> str:
+    """
+    CALL THIS TOOL IMMEDIATELY IF THE USER WANTS TO SEE, DRAW, OR VISUALIZE THE 2D STRUCTURE OF A MOLECULE.
+    Input MUST be a valid SMILES string.
+    """
     mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f"Invalid SMILES: {smiles}")
 
-    st.session_state["pending_image"] = Draw.MolToImage(mol, size=(400, 300))
-    return "Molecule rendered."
+    try:
+        img = Draw.MolToImage(mol, size=(400, 300))
+        shared_state = config.get("configurable", {}).get("shared_state")
+
+        if shared_state is not None:
+            shared_state["pending_image"] = img
+
+        return "Molecule successfully rendered and sent to the UI. Tell the user: 'Here is the 2D structure of the molecule.'"
+
+    except Exception as e:
+        return f"Error during drawing molecule: {str(e)}"

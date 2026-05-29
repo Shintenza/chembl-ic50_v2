@@ -1,14 +1,15 @@
 import sys
 from pathlib import Path
+from langchain.agents import create_agent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 from langchain_ollama import ChatOllama
-from langchain.agents import create_agent
+from frontend.agent.tools import predict_ic50, draw_molecule
+from frontend.agent.prompt import AGENT_PROMPT
 
 import config
-from frontend.agent.tools import predict_ic50, draw_molecule
 
 st.set_page_config(page_title="IC50 Agent", page_icon="🧪")
 
@@ -30,20 +31,16 @@ with st.sidebar:
         )
         st.info(f"Active: **{Path(st.session_state.selected_pt_model).stem}**")
 
+
 @st.cache_resource
 def get_agent():
-    llm = ChatOllama(model="llama3.2", temperature=0)
+    llm = ChatOllama(model="qwen2.5:3b", temperature=0)
     return create_agent(llm, [predict_ic50, draw_molecule])
 
-SYSTEM_PROMPT = (
-    "You are a chemoinformatics assistant. You have two tools: predict_ic50 and draw_molecule. "
-    "Use predict_ic50 when the user wants to know the IC50 or biological activity of a molecule. "
-    "Use draw_molecule when the user wants to see the 2D structure of a molecule. "
-    "predict_ic50 returns a pIC50 value. Present it as pIC50 and also convert to IC50 in nM using IC50 = 10^(9 - pIC50). "
-    "After predicting IC50, ask if the user would like to see the 2D structure."
-)
 
 st.title("Chemoinformatics AI Agent")
+
+agent = get_agent()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -66,20 +63,30 @@ if user_input := st.chat_input("Enter SMILES or ask a question..."):
                 st.error("Please select a model from the sidebar first.")
             else:
                 try:
-                    agent = get_agent()
+                    shared_state = {}
                     response = agent.invoke(
-                        {"messages": [("system", SYSTEM_PROMPT), ("human", user_input)]},
-                        config={"configurable": {"model_path": selected_model}},
+                        {
+                            "messages": [
+                                ("system", AGENT_PROMPT),
+                                ("human", user_input),
+                            ]
+                        },
+                        config={
+                            "configurable": {
+                                "shared_state": shared_state,
+                                "selected_model": selected_model,
+                            }
+                        },
                     )
+
                     output = response["messages"][-1].content
                     st.markdown(output)
 
                     msg_data = {"role": "assistant", "content": output}
 
-                    pending = st.session_state.pop("pending_image", None)
-                    if pending is not None:
-                        st.image(pending)
-                        msg_data["image"] = pending
+                    if "pending_image" in shared_state:
+                        st.image(shared_state["pending_image"])
+                        msg_data["image"] = shared_state["pending_image"]
 
                     st.session_state.messages.append(msg_data)
 
