@@ -3,7 +3,8 @@ from typing import Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GINEConv, global_mean_pool, global_max_pool
+from torch.nn import Linear, Dropout
+from torch_geometric.nn import GCNConv, global_mean_pool, BatchNorm
 from typing import cast
 from config import GRAPH
 
@@ -12,76 +13,68 @@ class GNN(IC50Model):
     def __init__(
         self,
         node_in_dim: int,
-        edge_in_dim: int,
-        hidden_dim: int = 64,
-        num_layers: int = 3,
-        dropout_rate: float = 0.3,
+        num_global_features: int,
+        hidden_dim: int = 128,
+        dropout_rate: float = 0.15,
     ):
         super().__init__()
-        self.node_emb = nn.Linear(node_in_dim, hidden_dim)
-        self.edge_emb = nn.Linear(edge_in_dim, hidden_dim)
 
-        self.convs = nn.ModuleList()
-        self.bns = nn.ModuleList()
+        self.conv1 = GCNConv(node_in_dim, hidden_dim)
+        self.bn1 = BatchNorm(hidden_dim)
 
-        for _ in range(num_layers):
-            mlp = nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim * 2),
-                nn.BatchNorm1d(hidden_dim * 2),
-                nn.ReLU(),
-                nn.Linear(hidden_dim * 2, hidden_dim),
-            )
-            self.convs.append(GINEConv(nn=mlp, train_eps=True))
-            self.bns.append(nn.BatchNorm1d(hidden_dim))
+        self.conv2 = GCNConv(hidden_dim, hidden_dim)
+        self.bn2 = BatchNorm(hidden_dim)
 
-        self.dropout = nn.Dropout(p=dropout_rate)
+        self.conv3 = GCNConv(hidden_dim, hidden_dim)
+        self.bn3 = BatchNorm(hidden_dim)
 
-        self.lin1 = nn.Linear(hidden_dim * 2, hidden_dim)
-        self.lin2 = nn.Linear(hidden_dim, 1)
+        self.linear1 = Linear(hidden_dim + num_global_features, hidden_dim // 2)
+        self.linear2 = Linear(hidden_dim // 2, 1)
+        self.dropout = Dropout(dropout_rate)
 
     def forward(self, data):
-        x, edge_index, edge_attr, batch = (
+        x, edge_index, _edge_attr, batch, global_features = (
             data.x,
             data.edge_index,
             data.edge_attr,
             data.batch,
+            data.global_features,
         )
 
-        x = self.node_emb(x)
-        edge_attr = self.edge_emb(edge_attr)
+        x = self.conv1(x, edge_index)
+        x = self.bn1(x)
+        x = F.relu(x)
 
-        for conv, bn in zip(self.convs, self.bns):
-            x = conv(x, edge_index, edge_attr)
-            x = bn(x)
-            x = F.relu(x)
+        x = self.conv2(x, edge_index)
+        x = self.bn2(x)
+        x = F.relu(x)
 
-        x_mean = global_mean_pool(x, batch)
-        x_max = global_max_pool(x, batch)
-        x_pool = torch.cat([x_mean, x_max], dim=1)
+        x = self.conv3(x, edge_index)
+        x = self.bn3(x)
+        x = F.relu(x)
 
-        x_pool = self.dropout(x_pool)
-        x_out = F.relu(self.lin1(x_pool))
+        x = global_mean_pool(x, batch)
 
-        x_out = self.dropout(x_out)
+        x = torch.cat([x, global_features], dim=1)
 
-        x_out = self.lin2(x_out)
+        x = self.dropout(x)
+        x = F.relu(self.linear1(x))
 
-        return x_out.squeeze(-1)
+        out = self.linear2(x)
+
+        return out.squeeze(-1)
 
     def unpack_batch(
         self, batch: Any, device: torch.device
     ) -> tuple[Any, torch.Tensor]:
         b = batch.to(device)
+        # print(b.x.size(1))
+        # print(b.global_features.size(1))
         return b, b.y.squeeze(-1)
 
 
 def build_model() -> IC50Model:
     node_in_dim = cast(int, GRAPH.get("NUM_ATOM_FEATURES"))
-    edge_in_dim = cast(int, GRAPH.get("NUM_BOND_FEATURES"))
+    num_global_features = cast(int, GRAPH.get("NUM_GLOBAL_FEATURES"))
 
-    return GNN(
-        node_in_dim,
-        edge_in_dim,
-        hidden_dim=64,
-        num_layers=3,
-    )
+    return GNN(node_in_dim=node_in_dim, num_global_features=num_global_features)
