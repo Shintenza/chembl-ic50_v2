@@ -76,8 +76,8 @@ CLEANING: dict = {
 
 GRAPH: dict = {
     "CHUNK_SIZE": 10_000,
-    "NUM_ATOM_FEATURES": 34,
-    "NUM_GLOBAL_FEATURES": 11,
+    "NUM_ATOM_FEATURES": 35,
+    "NUM_GLOBAL_FEATURES": 3,
     "NUM_BOND_FEATURES": 7,
 }
 
@@ -96,6 +96,7 @@ FINGERPRINT: dict = {
 
 TRAINING: dict = {
     "BATCH_SIZE": 512,
+    "EVAL_BATCH_SIZE": 256,
     "LEARNING_RATE": 1e-3,
     "WEIGHT_DECAY": 1e-4,
     "HIDDEN_DIM": 128,
@@ -105,7 +106,6 @@ TRAINING: dict = {
     "PATIENCE": 20,
     "LEARNING_RATE_PATIENCE": 10,
     "LEARNING_RATE_REDUCE_FACTOR": 0.8,
-    "EVAL_BATCH_SIZE": 1024,
     "NUM_WORKERS": 4,
 }
 

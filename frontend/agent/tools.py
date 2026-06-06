@@ -21,8 +21,8 @@ def is_gnn(model_path: str) -> bool:
     return "gnn" in name
 
 
-@st.cache_resource
 def load_model(model_path: str):
+    print("PATH: ", model_path)
     model = build_model() if is_gnn(model_path) else build_mlp()
     model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
     model.eval()
@@ -30,16 +30,62 @@ def load_model(model_path: str):
 
 
 @tool
-def predict_ic50(smiles: str, config: RunnableConfig) -> str:
+def predict_ic50(smiles: str, config: RunnableConfig):
     """
-    CALL THIS TOOL IMMEDIATELY IF THE USER WANTS TO PREDICT IC50 OR ACTIVITY.
-    INPUT MUST BE A SMILES STRING.
+    Predicts pIC50 and IC50 values for a molecule represented as a SMILES string.
+
+    Use this tool whenever the user:
+    - asks for IC50 prediction
+    - asks for pIC50 prediction
+    - asks about predicted activity of a molecule
+    - provides a SMILES and asks how potent or active the molecule is
+
+    Input:
+    - smiles (str): valid SMILES representation of a molecule
+
+    Returns:
+    {
+        "status": "success",
+        "pic50": float,
+        "ic50": float
+    }
+
+    where:
+    - pic50 is the predicted pIC50 value
+    - ic50 is the predicted IC50 value in nM
+
+    If prediction fails:
+
+    {
+        "status": "error"
+    }
+
+    Important:
+    - Always use this tool instead of estimating activity yourself.
+    - Never invent IC50 values.
+    - The input must be a SMILES string.
+
+    Examples:
+
+    User:
+    Predict IC50 for CCO
+
+    Action:
+    predict_ic50("CCO")
+
+    User:
+    How active is this molecule? CCO
+
+    Action:
+    predict_ic50("CCO")
     """
     print("I WAS CALLED WITH SMILES: ", smiles)
     model_path = config.get("configurable", {}).get("selected_model")
 
     if not model_path:
-        return "Error: No model selected. Tell the user to select a model from the sidebar."
+        return {
+            "status": "error",
+        }
 
     try:
         model = load_model(model_path)
@@ -47,6 +93,7 @@ def predict_ic50(smiles: str, config: RunnableConfig) -> str:
 
         if is_gnn(model_path):
             graph = smiles_to_graph_input(smiles)
+
             with torch.no_grad():
                 pred = model(Batch.from_data_list([graph]).to(device))
         else:
@@ -55,17 +102,72 @@ def predict_ic50(smiles: str, config: RunnableConfig) -> str:
                 pred = model(fp.unsqueeze(0).to(device))
         pic50 = pred.item()
         ic50_nm = 10 ** (9 - pic50)
-        return f"Predicted pIC50 is {pic50:.2f}, which equals {ic50_nm:.2f} nM."
+
+        return {
+            "status": "success",
+            "pic50": pic50,
+            "ic50" : ic50_nm
+        }
 
     except Exception as e:
-        return f"Error during model inference: {str(e)}"
+        return {
+            "status": "error",
+        }
 
 
 @tool
-def draw_molecule(smiles: str, config: RunnableConfig) -> str:
+def draw_molecule(smiles: str, config: RunnableConfig):
     """
-    CALL THIS TOOL IMMEDIATELY IF THE USER WANTS TO SEE, DRAW, OR VISUALIZE THE 2D STRUCTURE OF A MOLECULE.
-    Input MUST be a valid SMILES string.
+    Generates a 2D depiction of a molecule from its SMILES representation.
+
+    Use this tool whenever the user:
+    - wants to see a molecule
+    - asks to draw a molecule
+    - asks for a molecular structure image
+    - asks to visualize a SMILES string
+    - asks for the 2D structure of a compound
+    - agrees to render a molecule after receiving an IC50 prediction
+
+    Input:
+    - smiles (str): valid SMILES representation of a molecule
+
+    Returns on success:
+    {
+        "status": "success"
+    }
+
+    Returns on failure:
+    {
+        "status": "failure"
+    }
+
+    Important:
+    - The input must be a valid SMILES string.
+    - Use this tool only when the user explicitly requests visualization or agrees to view a structure.
+    - Do not call this tool when the user only requests activity prediction, IC50 prediction, or other numerical properties.
+    - If the user asks for both activity prediction and visualization, first predict activity, then render the molecule if requested.
+
+    Examples:
+
+    User:
+    Draw this molecule: CCO
+
+    Action:
+    draw_molecule("CCO")
+
+    User:
+    Show me the structure of aspirin
+
+    Action:
+    Obtain the aspirin SMILES if available, then call:
+    draw_molecule(smiles)
+
+    User:
+    Yes, show me the structure
+
+    Action:
+    Use the most recently referenced valid SMILES and call:
+    draw_molecule(smiles)
     """
     mol = Chem.MolFromSmiles(smiles)
 
@@ -76,7 +178,11 @@ def draw_molecule(smiles: str, config: RunnableConfig) -> str:
         if shared_state is not None:
             shared_state["pending_image"] = img
 
-        return "Molecule successfully rendered and sent to the UI. Tell the user: 'Here is the 2D structure of the molecule.'"
+        return {
+            "status": "success"
+        }
 
     except Exception as e:
-        return f"Error during drawing molecule: {str(e)}"
+        return {
+            "status": "failure"
+        }

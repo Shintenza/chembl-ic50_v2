@@ -2,6 +2,7 @@ import torch
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 from torch_geometric.data import Data
+from rdkit.Chem import Lipinski
 
 BOND_TYPES = ["SINGLE", "DOUBLE", "TRIPLE", "AROMATIC", "OTHER"]
 ATOMS = ["C", "N", "O", "S", "F", "P", "Cl", "Br", "I"]
@@ -14,6 +15,7 @@ HYBRIDIZATION = [
     Chem.rdchem.HybridizationType.SP3D2,
 ]
 NUMBER_OF_HS = [0, 1, 2, 3, 4, "MoreThan4"]
+CHIRAL_TAG = [0, 1, 2]
 
 
 def one_hot_encoding(value, choices):
@@ -29,8 +31,6 @@ def get_node_features(atom):
     atom_type = atom.GetSymbol()
     atom_type_enc = one_hot_encoding(atom_type, ATOMS)
 
-    mass = [atom.GetMass() / 100.0]
-
     degree_enc = one_hot_encoding(atom.GetTotalDegree(), DEGREE)
 
     hybridization_enc = one_hot_encoding(str(atom.GetHybridization()), HYBRIDIZATION)
@@ -38,20 +38,17 @@ def get_node_features(atom):
     num_implicit_h_enc = one_hot_encoding(atom.GetTotalNumHs(), NUMBER_OF_HS)
 
     is_aromatic = [int(atom.GetIsAromatic())]
-    formal_charge = [atom.GetFormalCharge()]
-    radical_electrons = [atom.GetNumRadicalElectrons()]
     is_in_ring = [int(atom.IsInRing())]
+    chiral_tag = one_hot_encoding(atom.GetChiralTag(), choices=CHIRAL_TAG)
 
     return (
         atom_type_enc
-        + mass
         + degree_enc
         + hybridization_enc
         + num_implicit_h_enc
         + is_aromatic
         + is_in_ring
-        + formal_charge
-        + radical_electrons
+        + chiral_tag
     )
 
 
@@ -95,20 +92,10 @@ def smiles_to_graph_input(smiles: str) -> Data | None:
     edge_index = torch.tensor(edges_list, dtype=torch.long).t().contiguous()
     edge_attr = torch.tensor(edge_features_list, dtype=torch.float)
 
-    mol_wt = Descriptors.MolWt(mol) / 100.0
-    logp = Descriptors.MolLogP(mol)
-    tpsa = Descriptors.TPSA(mol) / 100.0
-    rot_bonds = Descriptors.NumRotatableBonds(mol) / 10.0
-
-    h_donors = Descriptors.NumHDonors(mol) / 10.0
-    h_acceptors = Descriptors.NumHAcceptors(mol) / 10.0
-
-    fraction_csp3 = Descriptors.FractionCSP3(mol)
-    mol_mr = Descriptors.MolMR(mol) / 100.0
-
-    aromatic_rings = Descriptors.NumAromaticRings(mol) / 5.0
-    aliphatic_rings = Descriptors.NumAliphaticRings(mol) / 5.0
-    bertz_ct = Descriptors.BertzCT(mol) / 1000.0
+    # TODO do proper scaling
+    mol_wt = Descriptors.MolWt(mol) / 700.0
+    logp = Descriptors.MolLogP(mol) / 10.0
+    tpsa = Descriptors.TPSA(mol) / 200.0
 
     global_features = torch.tensor(
         [
@@ -116,14 +103,6 @@ def smiles_to_graph_input(smiles: str) -> Data | None:
                 mol_wt,
                 logp,
                 tpsa,
-                rot_bonds,
-                h_donors,
-                h_acceptors,
-                fraction_csp3,
-                mol_mr,
-                aromatic_rings,
-                aliphatic_rings,
-                bertz_ct,
             ]
         ],
         dtype=torch.float,
