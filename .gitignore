@@ -18,9 +18,5 @@ __pycache__/
 # ChEMBL dump files (large binary downloads — not for version control)
 dumps/
 
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
-
 # IDE
 .vscode/
