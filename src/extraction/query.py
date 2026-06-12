@@ -32,7 +32,7 @@ def build_extraction_query(offset: int, batch_size: int) -> str:
         AND act.pchembl_value     IS NOT NULL
         AND act.standard_value    > 0
         AND act.potential_duplicate = 0
-        AND a.confidence_score > 6
+        AND a.confidence_score > 7
         AND td.chembl_id = 'CHEMBL2147'
     ORDER BY
         act.activity_id

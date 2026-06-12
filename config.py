@@ -46,7 +46,7 @@ PATHS: dict = {
     "GRAPHS_DIR": DATA_DIR / "graphs",
     "FINGERPRINTS_DIR": DATA_DIR / "fingerprints",
     "SPLITS_DIR": DATA_DIR / "splits",
-    "MODELS_DIR": DATA_DIR / "models",
+    "MODELS_DIR": ROOT_DIR / "models",
     "LOGS_DIR": DATA_DIR / "logs",
 }
 

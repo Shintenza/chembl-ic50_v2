@@ -1,4 +1,5 @@
 import sys
+import joblib
 from pathlib import Path
 from langchain.agents import create_agent
 
@@ -59,8 +60,13 @@ if user_input := st.chat_input("Enter SMILES or ask a question..."):
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             selected_model = st.session_state.get("selected_pt_model")
+
+            scaler_path = config.PATHS["MODELS_DIR"] / "global_features_scaler.pkl"
+            loaded_scaler = joblib.load(scaler_path)
+
             if not selected_model:
                 st.error("Please select a model from the sidebar first.")
+
             else:
                 try:
                     shared_state = {}
@@ -75,6 +81,7 @@ if user_input := st.chat_input("Enter SMILES or ask a question..."):
                             "configurable": {
                                 "shared_state": shared_state,
                                 "selected_model": selected_model,
+                                "global_features_scaler": loaded_scaler
                             }
                         },
                     )

@@ -22,7 +22,6 @@ def is_gnn(model_path: str) -> bool:
 
 
 def load_model(model_path: str):
-    print("PATH: ", model_path)
     model = build_model() if is_gnn(model_path) else build_mlp()
     model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
     model.eval()
@@ -81,8 +80,10 @@ def predict_ic50(smiles: str, config: RunnableConfig):
     """
     print("I WAS CALLED WITH SMILES: ", smiles)
     model_path = config.get("configurable", {}).get("selected_model")
+    global_features_scaler = config.get("configurable", {}).get("global_features_scaler")
+    print("SCALER: ", global_features_scaler)
 
-    if not model_path:
+    if not model_path or not global_features_scaler:
         return {
             "status": "error",
         }
@@ -92,14 +93,16 @@ def predict_ic50(smiles: str, config: RunnableConfig):
         device = torch.device("cpu")
 
         if is_gnn(model_path):
-            graph = smiles_to_graph_input(smiles)
+            graph = smiles_to_graph_input(smiles, global_features_scaler)
+            print("GRAPH: ", graph)
 
             with torch.no_grad():
-                pred = model(Batch.from_data_list([graph]).to(device))
+                pred = model(Batch.from_data_list([graph]).to(device))  # ty:ignore[unresolved-attribute]
+                print("PREDICTION: ", pred)
         else:
             fp = smiles_to_fingerprint(smiles)
             with torch.no_grad():
-                pred = model(fp.unsqueeze(0).to(device))
+                pred = model(fp.unsqueeze(0).to(device))  # ty:ignore[unresolved-attribute]
         pic50 = pred.item()
         ic50_nm = 10 ** (9 - pic50)
 
@@ -110,6 +113,7 @@ def predict_ic50(smiles: str, config: RunnableConfig):
         }
 
     except Exception as e:
+        print("ERROR: ", e)
         return {
             "status": "error",
         }
